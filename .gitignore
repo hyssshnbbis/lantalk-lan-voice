@@ -1,0 +1,24 @@
+# 构建产物与运行期文件 / build outputs and runtime files
+dist/
+*.exe
+*.log
+*.pdb
+*.obj
+
+# 自检 / 测试过程产生的临时目录
+dist/_t/
+dist/_ab/
+dist/_dbg/
+
+# 编辑器与系统文件
+.vs/
+.idea/
+*.user
+*.suo
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# 说明：assets/ 与 third_party/ 是**要入库**的
+#   assets/       图标源图、生成好的 ico、界面截图（README 要用）
+#   third_party/  上游 sonora-ns 源码（移植依据，署名需要，见 THIRD-PARTY-NOTICES.md）
