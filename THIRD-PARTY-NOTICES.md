@@ -1,10 +1,10 @@
 # 第三方内容声明 / Third-Party Notices
 
-本文件逐项列出 LanTalk 中**所有来自他人的内容**：移植的代码、附带的参考源码、参考的算法与标准，
-以及来源不明的素材。目的是让人能一眼看清"哪些是我写的、哪些是别人的"。
+本文件逐项列出 LanTalk 中**所有来自他人的内容**：移植的代码、随仓库附带的参考源码、
+参考的算法与公开标准。
 
 This file lists **every piece of third-party content** in LanTalk: ported code, bundled reference
-sources, referenced algorithms and standards, and assets of unclear provenance.
+sources, and referenced algorithms and standards.
 
 > 如果你在本仓库里发现任何应当署名而未署名的内容，请开 issue，我会立刻补上或移除。
 > If you find anything here that should be attributed but isn't, please open an issue.
@@ -108,42 +108,17 @@ sonora-ns 的 FFT 走的是 [Ooura 的 fft4g](https://www.kurims.kyoto-u.ac.jp/~
 
 ---
 
-## 四、来源需要你确认的素材
+## 四、图标
 
-### 4.1 应用图标
+`assets/icon-source.png` 由仓库所有者用 AI 生成，**不是第三方素材**；
+`assets/LanTalk.ico` 与 `assets/LanTalk.png` 由 `tools/make_icon.py` 从它生成。
 
-| 文件 | 情况 |
-| --- | --- |
-| `assets/icon-source.png` | **由本仓库使用者提供的图片**，非我从网络下载 |
-| `assets/LanTalk.ico`、`assets/LanTalk.png` | 由 `tools/make_icon.py` 从上面那张图生成（去白底、圆角、多尺寸） |
-
-**我无法确认这张原图的权利归属。** 如果它来自网络或他人作品，
-**在公开发布前请务必确认你有权使用，或替换成你自己创作/授权明确的图**。
-这是本仓库唯一一处我无法替你担保来源的素材。
+> 备查：AI 生成图的著作权状态在不同法域规定不一。本项目的开源发布不受影响，
+> 但若日后要商用或主张权利，建议记录生成时使用的模型与日期。
 
 ---
 
-## 五、明确属于原创的部分
-
-除上述内容外，本仓库其余部分均为原创：
-
-- 全部通话功能：`src/Net.cs`（UDP 传输与对端管理）、`src/Session.cs`（一对一状态机）、
-  `src/Conference.cs`（房间广播发现与全网状会议）、`src/AudioPath.cs`（抖动缓冲、多路混音、编码切换）
-- 全部界面：`src/MainForm.cs`、`src/Setup/SetupUi.cs`
-- 轻量版降噪引擎：`src/Denoise.cs`（结构参考了 WebRTC NS 的分层方式，但算法实现、
-  参数标定、延迟推导与测试都是本项目自己的）
-- 录音对比工具：`src/DenoiseCompare.cs`、`src/WavFile.cs`、`src/RecordAb.cs`
-- 安装程序：`src/Setup/InstallEngine.cs`、`src/Setup/SetupProgram.cs`
-- 图标生成器：`tools/make_icon.py`
-- 界面冒烟测试：`tools/ui-smoke-test.ps1`
-- 构建脚本、README 与全部文档
-
-**本项目没有任何第三方二进制依赖**：不使用 NuGet 包，不链接任何原生 DLL，
-只用 .NET Framework 自带的 BCL 与 Windows 系统自带的 `winmm.dll`。
-
----
-
-## 六、BSD-3-Clause 许可证原文
+## 五、BSD-3-Clause 许可证原文
 
 以下为 sonora-ns 的许可证全文（`third_party/sonora-ns/LICENSE` 的副本，
 也见 [`licenses/sonora-ns-LICENSE.txt`](licenses/sonora-ns-LICENSE.txt)）：
@@ -184,7 +159,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ---
 
-## 七、许可证兼容性说明
+## 六、许可证兼容性说明
 
 - 本项目自身以 **MIT** 发布（见 [`LICENSE`](LICENSE)）。
   > `LICENSE` 里**只放 MIT 正文**，第三方说明一律放在本文件——因为 GitHub 的许可证识别

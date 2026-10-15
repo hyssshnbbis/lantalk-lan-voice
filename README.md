@@ -13,9 +13,9 @@
 > [sonora-ns]）。两版都保留、可在界面上随时切换。详见
 > [§5.4](#54-语音降噪纯-c无第三方库) 与 [§5.5](#55-webrtc-降噪sonora-ns-的-c-移植)。
 
-> **关于第三方内容**：本项目移植了 sonora-ns / WebRTC 的代码（BSD-3-Clause）。
-> 哪些是移植的、哪些是原创的、附带了哪些上游源码，全部逐项列在
-> **[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)** 里。
+> **关于第三方内容**：本项目移植了 sonora-ns / WebRTC 的代码（BSD-3-Clause）、
+> 随仓库附带了上游 Rust 源码、并参考了一些公开方法与标准。
+> 全部逐项列在 **[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)** 里。
 
 ---
 
@@ -626,8 +626,8 @@ dist\LanTalk.exe --selftest
 
 ## 12. 第三方内容与许可
 
-这一项单独列全，因为开源项目的署名不能含糊：**完整的清单在
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)**，这里给个摘要。
+移植和参考了别人的东西，就逐项写清楚。**完整清单在
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)**，这里给个摘要：
 
 | 内容 | 来源 | 许可 | 位置 |
 | --- | --- | --- | --- |
@@ -639,13 +639,8 @@ dist\LanTalk.exe --selftest
 | 判决引导先验信噪比 | Ephraim & Malah, IEEE Trans. ASSP, 1984 | 公开方法 | `src/Denoise.cs` |
 | G.711 µ-law | ITU-T Recommendation G.711 | 公开标准 | `src/AudioPath.cs` |
 | `winmm.dll` 接口 | Microsoft Windows SDK 文档 | — | `src/Mm.cs` |
-| **应用图标源图** | **由仓库使用者提供** | **无法确认** | `assets/icon-source.png` |
 
-⚠️ **图标是唯一一处我无法替你担保来源的素材。**`assets/icon-source.png` 是仓库使用者提供的图片，
-不是我从网上下载的。如果它来自网络或他人作品，**公开发布前请确认你有权使用，或换成自己的图。**
-
-其余部分均为原创：传输层、会话状态机、会议协议、抖动缓冲、混音器、两层界面、安装程序、
-轻量版降噪引擎、录音对比工具、图标生成器、构建脚本与全部文档。
+应用图标 `assets/icon-source.png` 由仓库所有者用 AI 生成，不是第三方素材。
 
 **许可**：本项目自身以 **MIT** 发布（见 [LICENSE](LICENSE)）。移植自 sonora-ns / WebRTC 的部分
 **同时受 BSD-3-Clause 约束**——该许可证允许以其它条款再发布，但必须保留版权声明与免责声明，
