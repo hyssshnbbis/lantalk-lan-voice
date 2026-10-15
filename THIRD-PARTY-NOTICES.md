@@ -187,6 +187,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## 七、许可证兼容性说明
 
 - 本项目自身以 **MIT** 发布（见 [`LICENSE`](LICENSE)）。
+  > `LICENSE` 里**只放 MIT 正文**，第三方说明一律放在本文件——因为 GitHub 的许可证识别
+  > 遇到追加内容会把整份许可证判成 `Other`，那样仓库页面上就显示不出 MIT 了。
 - 其中移植自 sonora-ns / WebRTC NS 的部分，**同时受 BSD-3-Clause 约束**；
   BSD-3-Clause 是宽松许可证，允许以其它许可证再发布，但**必须保留上述版权声明与免责声明**。
   本文件与 `licenses/sonora-ns-LICENSE.txt` 即为此目的的保留。

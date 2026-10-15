@@ -19,17 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-NOTE ON THIRD-PARTY COMPONENTS / 第三方组件说明
-
-This project includes code ported from sonora-ns and WebRTC, which are
-licensed under BSD-3-Clause. Those portions remain subject to BSD-3-Clause
-and their copyright notices must be retained.
-
-本项目包含移植自 sonora-ns 与 WebRTC 的代码，二者以 BSD-3-Clause 授权。
-这些部分仍受 BSD-3-Clause 约束，必须保留其版权声明。
-
-See THIRD-PARTY-NOTICES.md for the full list and the BSD-3-Clause text.
-完整的第三方内容清单与 BSD-3-Clause 原文见 THIRD-PARTY-NOTICES.md。
