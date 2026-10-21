@@ -60,6 +60,7 @@ namespace LanTalk
             TestChatWire();
             TestImageWire();
             TestImageE2E();
+            TestImageP2P();
             TestSelfUpdate();
             TestRoomProtocol();
             TestUdpProtocol();
@@ -298,6 +299,81 @@ namespace LanTalk
         }
 
         // ---------- 3c. 会议室协议：互相发现 / 离开 ----------
+        /// <summary>一对一的图片路径：走 Session.SendImage，必须也逐字节送达。</summary>
+        private static void TestImageP2P()
+        {
+            List<string> bad = new List<string>();
+            UdpPeer netA = new UdpPeer();
+            UdpPeer netB = new UdpPeer();
+            AudioPath apA = null, apB = null;
+            Session sA = null, sB = null;
+            try
+            {
+                netA.Start("127.0.0.1", 0);
+                netB.Start("127.0.0.1", 0);
+                apA = new AudioPath(netA, VoiceCodec.Pcm16, Rate, FrameMs,
+                    delegate() { return new ToneSource(Rate, FrameMs); },
+                    delegate() { return new NullSink(Rate, FrameMs); });
+                apB = new AudioPath(netB, VoiceCodec.Pcm16, Rate, FrameMs,
+                    delegate() { return new ToneSource(Rate, FrameMs); },
+                    delegate() { return new NullSink(Rate, FrameMs); });
+                sA = new Session(netA, apA);
+                sB = new Session(netB, apB);
+                sB.AutoAnswer = true;
+
+                // 先接通
+                sA.Call("127.0.0.1", netB.LocalPort);
+                DateTime deadline = DateTime.UtcNow.AddSeconds(5);
+                while (DateTime.UtcNow < deadline)
+                {
+                    sA.Tick(); sB.Tick();
+                    if (sA.State == CallState.InCall && sB.State == CallState.InCall) break;
+                    Thread.Sleep(50);
+                }
+                if (sA.State != CallState.InCall || sB.State != CallState.InCall)
+                    bad.Add("没能建立通话（A=" + sA.State + " B=" + sB.State + "）");
+
+                // 发一张 4500 字节的"图"
+                byte[] img = new byte[4500];
+                for (int i = 0; i < img.Length; i++) img[i] = (byte)((i * 29 + 11) & 0xFF);
+
+                byte[] got = null;
+                sB.ImageReceived += delegate(string who, byte[] d) { got = d; };
+
+                int sent = sA.SendImage(img);
+                int expect = ImageWire.ChunkCount(img.Length);
+                if (sent != expect) bad.Add("片数 " + sent + " != " + expect);
+
+                deadline = DateTime.UtcNow.AddSeconds(5);
+                while (DateTime.UtcNow < deadline && got == null)
+                {
+                    sA.Tick(); sB.Tick();
+                    Thread.Sleep(20);
+                }
+
+                bool same = got != null && got.Length == img.Length;
+                if (same)
+                {
+                    for (int i = 0; i < img.Length; i++) if (got[i] != img[i]) { same = false; break; }
+                }
+                if (!same) bad.Add("一对一收到的字节不一致（收到 " + (got == null ? "null" : got.Length.ToString()) + "）");
+            }
+            catch (Exception ex) { bad.Add("异常：" + ex.Message); }
+            finally
+            {
+                try { if (sA != null) sA.Dispose(); } catch { }
+                try { if (sB != null) sB.Dispose(); } catch { }
+                try { if (apA != null) apA.Dispose(); } catch { }
+                try { if (apB != null) apB.Dispose(); } catch { }
+                try { if (netA != null) netA.Dispose(); } catch { }
+                try { if (netB != null) netB.Dispose(); } catch { }
+            }
+
+            if (bad.Count == 0)
+                T.Ok("image_p2p", "一对一接通后发 4500 字节图片，切成 " + ImageWire.ChunkCount(4500) + " 片并逐字节一致");
+            else
+                T.Bad("image_p2p", string.Join("；", bad.ToArray()));
+        }
         /// <summary>图片端到端：A 发一张，B 必须收到完全一致的字节。</summary>
         private static void TestImageE2E()
         {
