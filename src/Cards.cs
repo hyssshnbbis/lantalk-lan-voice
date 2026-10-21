@@ -681,7 +681,7 @@ namespace LanTalk
 
             // 输入框与发送按钮必须等高、同基线，否则看着是歪的
             int iy = ContentTop + viewH + RowGap + 4;
-            Draft = Input("说点什么，回车发送", PadH, iy, pw - 96, false);
+            Draft = Input("说点什么，回车发送（Ctrl+V 粘图／拖入图片也能发）", PadH, iy, pw - 96, false);
             Draft.Height = rowH;
             Draft.Box.KeyDown += OnDraftKeyDown;
 

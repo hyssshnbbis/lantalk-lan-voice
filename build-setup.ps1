@@ -1,4 +1,4 @@
-<#
+﻿<#
     build-setup.ps1 —— 编译安装程序（单文件安装 exe）
     先调 build.ps1 编译出 dist\LanTalk.exe，再把它和 README、防火墙脚本一起作为
     内嵌资源打进安装程序，最后产出 dist\LanTalk-Setup-1.2.0.exe。
