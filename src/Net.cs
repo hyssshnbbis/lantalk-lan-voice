@@ -27,7 +27,8 @@ namespace LanTalk
         RoomHere = 13,      // 会议室应答（单播）：同上
         RoomBye = 14,       // 离开会议室
         Chat = 15,          // 文本消息（会议室与一对一通用）
-        ImageChunk = 16     // 图片分片
+        ImageChunk = 16,    // 图片分片
+        Avatar = 17         // 头像（同样走分片）
     }
 
     internal sealed class IfaceInfo

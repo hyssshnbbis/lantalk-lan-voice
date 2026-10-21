@@ -59,6 +59,9 @@ namespace LanTalk
         private DateTime _joinedAt = DateTime.MinValue;
         private readonly object _lock = new object();
         private readonly ImageAssembler _imgAsm = new ImageAssembler();
+        private readonly ImageAssembler _avatarAsm = new ImageAssembler();
+        private uint _avatarSeq;
+        private byte[] _myAvatar;
         private uint _imgSeq;
 
         private volatile bool _joined;
@@ -71,6 +74,9 @@ namespace LanTalk
 
         /// <summary>收到一条聊天消息：(发送者名字, 正文)。</summary>
         public event Action<string, string> ChatReceived;
+
+        /// <summary>收到某个成员的头像：(成员Key, JPEG 字节)。</summary>
+        public event Action<string, byte[]> AvatarChanged;
 
         /// <summary>收齐一张图片：(发送者, JPEG 字节)。</summary>
         public event Action<string, byte[]> ImageReceived;
@@ -308,6 +314,25 @@ namespace LanTalk
         private void OnControl(Pkt p, byte[] payload, int len, IPEndPoint src)
         {
             if (!_joined) return;
+
+            // 头像：载荷重组后是 [实例ID 4][jpeg]，按 ID 找到成员再抛事件
+            if (p == Pkt.Avatar)
+            {
+                _avatarAsm.Add(payload, len, delegate(uint mid, byte[] blob)
+                {
+                    if (blob == null || blob.Length < 5) return;
+                    uint who = (uint)(blob[0] | (blob[1] << 8) | (blob[2] << 16) | (blob[3] << 24));
+                    if (who == MyId) return;
+                    byte[] jpeg = new byte[blob.Length - 4];
+                    Buffer.BlockCopy(blob, 4, jpeg, 0, jpeg.Length);
+                    Member m = FindById(who);
+                    if (m == null) return;
+                    Log("收到头像：" + ((string.IsNullOrEmpty(m.Name) ? m.Key : m.Name)) + "  " + (jpeg.Length / 1024) + " KB");
+                    Action<string, byte[]> h = AvatarChanged;
+                    if (h != null) { try { h(m.Key, jpeg); } catch { } }
+                });
+                return;
+            }
 
             // 图片分片：拼齐后抛事件（按来源地址标注发送者）
             if (p == Pkt.ImageChunk)
@@ -585,6 +610,40 @@ namespace LanTalk
             }
             Log("发出图片：" + (jpeg.Length / 1024) + " KB，切成 " + total + " 片");
             return sent;
+        }
+
+        /// <summary>设置并广播自己的头像（传 null 表示清除）。</summary>
+        public void SetAvatar(byte[] jpeg)
+        {
+            _myAvatar = jpeg;
+            if (_joined) SendAvatarToAll();
+        }
+
+        /// <summary>把当前头像发给所有已知成员。</summary>
+        public void SendAvatarToAll()
+        {
+            if (!_joined || _myAvatar == null || _myAvatar.Length == 0) return;
+
+            byte[] blob = new byte[4 + _myAvatar.Length];
+            uint id = MyId;
+            blob[0] = (byte)(id & 0xFF); blob[1] = (byte)((id >> 8) & 0xFF);
+            blob[2] = (byte)((id >> 16) & 0xFF); blob[3] = (byte)((id >> 24) & 0xFF);
+            Buffer.BlockCopy(_myAvatar, 0, blob, 4, _myAvatar.Length);
+
+            uint msgId = ((uint)(MyId & 0x7FFF) << 16) | (uint)((++_avatarSeq) & 0xFFFF) | 0x80000000u;
+            int total = ImageWire.ChunkCount(blob.Length);
+            IPEndPoint[] peers = _net.Peers;
+            for (int ci = 0; ci < total; ci++)
+            {
+                int off = ci * ImageWire.ChunkPayload;
+                int len = Math.Min(ImageWire.ChunkPayload, blob.Length - off);
+                byte[] chunk = ImageWire.BuildChunk(msgId, ci, total, blob, off, len);
+                for (int i = 0; i < peers.Length; i++)
+                {
+                    try { _net.SendControl(Pkt.Avatar, chunk, chunk.Length, peers[i]); } catch { }
+                }
+            }
+            Log("广播头像：" + (_myAvatar.Length / 1024) + " KB，切成 " + total + " 片");
         }
 
         private void RaiseChat(string who, string text)

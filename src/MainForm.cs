@@ -85,6 +85,7 @@ namespace LanTalk
         private Conference _conference;
         private string _myName;
         private bool _pttHeld;
+        private int _lastMemberCount;
         private bool _closing;
         private DateTime _lastMemberRefreshUtc = DateTime.MinValue;
         private Icon _iconSmall, _iconBig;
@@ -92,9 +93,9 @@ namespace LanTalk
         public MainForm(Args args)
         {
             _args = args;
-            _myName = string.IsNullOrEmpty(args.Name)
-                ? (Environment.MachineName + " / " + Environment.UserName)
-                : args.Name;
+            Profile.Load();
+            // 自定义名字优先，其次命令行 --name，最后才是机器名
+            _myName = !string.IsNullOrEmpty(args.Name) ? args.Name : Profile.Name;
 
             BuildUi();
             BindLog();
@@ -647,6 +648,7 @@ namespace LanTalk
             _conference.ImageReceived += OnChatImageReceived;
             _conference.Notice += delegate(string m) { Log.Write(m); };
             _conference.Changed += OnConferenceChanged;
+            _conference.AvatarChanged += OnMemberAvatar;
 
             _lblLocalHint.Text = "监听 " + _net.LocalEndPointText;
             _lblLocalHint.ForeColor = Theme.Accent;
@@ -880,6 +882,12 @@ namespace LanTalk
             }
             if (_cardMembers != null) _cardMembers.SetCount(_conference.MemberCount);
             OnMemberSelected(null, EventArgs.Empty);
+            if (_conference != null && _conference.Joined)
+            {
+                // 有新人进来（或刚进房）就补发一次自己的头像
+                if (_conference.MemberCount > _lastMemberCount) PushMyAvatar();
+                _lastMemberCount = _conference.MemberCount;
+            }
         }
 
 
@@ -1426,6 +1434,35 @@ namespace LanTalk
             _lblStats.Text = l1 + Environment.NewLine + l2 + Environment.NewLine + l3;
         }
 
+
+        // ==================== 头像 ====================
+
+        /// <summary>收到某个成员的头像，存进成员列表并重绘。</summary>
+        private void OnMemberAvatar(string key, byte[] jpeg)
+        {
+            try
+            {
+                if (_cardMembers == null || string.IsNullOrEmpty(key)) return;
+                Bitmap b = ChatFeed.DecodeThumb(jpeg);
+                if (b == null) return;
+                _cardMembers.List.Avatars[key] = b;
+                _cardMembers.List.Invalidate();
+            }
+            catch { }
+        }
+
+        /// <summary>把自己的头像发给房间里所有人（进房时、换头像时、有新成员时调）。</summary>
+        private void PushMyAvatar()
+        {
+            try
+            {
+                if (_conference == null || !_conference.Joined) return;
+                byte[] a = Profile.AvatarBytes;
+                if (a == null || a.Length == 0) return;
+                _conference.SetAvatar(a);
+            }
+            catch { }
+        }
         // ================= 退出 =================
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)

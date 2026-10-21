@@ -11,6 +11,7 @@
 //   行位置一律写成 ContentTop + 偏移，间距靠常量而不是散落的魔法数。
 // 所有尺寸都是 96 DPI 逻辑值，最后统一由 MainForm.ApplyDpiScale 乘系数。
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
@@ -489,6 +490,9 @@ namespace LanTalk
     {
         private int _hot = -1;   // 鼠标悬停在哪一行（-1 表示没有）
 
+        /// <summary>成员 Key -> 头像。有就用真头像，没有就退回"首字方块"。</summary>
+        public readonly Dictionary<string, Image> Avatars = new Dictionary<string, Image>();
+
         public MemberListView()
         {
             HeaderStyle = ColumnHeaderStyle.None;
@@ -570,10 +574,28 @@ namespace LanTalk
             int ax = b.X + Theme.Radius(this, 5);
             int ay = b.Y + (b.Height - d) / 2;
 
-            // 圆角矩形头像（不再是圆形）
-            using (GraphicsPath ap = Theme.RoundRect(new Rectangle(ax, ay, d, d), Theme.Radius(this, 7)))
-            using (SolidBrush br = new SolidBrush(AvatarColor(name)))
-                g.FillPath(br, ap);
+            // 有真头像就画真头像（裁剪成圆角矩形），否则退回"首字方块"
+            Image real = null;
+            object key = e.Item.Tag;
+            if (key != null) Avatars.TryGetValue(key.ToString(), out real);
+
+            Rectangle ar = new Rectangle(ax, ay, d, d);
+            using (GraphicsPath ap = Theme.RoundRect(ar, Theme.Radius(this, 7)))
+            {
+                if (real != null)
+                {
+                    GraphicsState gs = g.Save();
+                    g.SetClip(ap);
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.DrawImage(real, ar);
+                    g.Restore(gs);
+                }
+                else
+                {
+                    using (SolidBrush br = new SolidBrush(AvatarColor(name)))
+                        g.FillPath(br, ap);
+                }
+            }
 
             using (StringFormat sf = Cell())
             {

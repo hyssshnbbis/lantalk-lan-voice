@@ -107,9 +107,16 @@ namespace LanTalk
 
         public readonly FlatButton Back;
         public readonly FlatButton NavSettings;
+        public readonly FlatButton NavProfile;
         public readonly FlatButton NavUpdate;
 
         public readonly Panel PageSettings;
+        public readonly Panel PageProfile;
+
+        public readonly DarkInput NameInput;
+        public readonly PictureBox AvatarBox;
+        public readonly FlatButton AvatarPick, AvatarClear;
+        public readonly Label ProfileHint;
         public readonly Panel PageUpdate;
 
         public readonly Label VersionLabel;
@@ -136,14 +143,16 @@ namespace LanTalk
             Back.SetBounds(14, 14, 96, 30);
             Back.Click += delegate { if (BackClicked != null) BackClicked(this, EventArgs.Empty); };
 
-            NavSettings = NavItem("设置", 14, 60);
+            NavProfile = NavItem("个人资料", 14, 60);
+            NavSettings = NavItem("设置", 14, 100);
             NavSettings.Click += delegate { ShowPageSettings(); };
 
-            Label g2 = SectionLabel("应用", 14, 116);
-            NavUpdate = NavItem("检查更新", 14, 140);
+            Label g2 = SectionLabel("应用", 14, 148);
+            NavUpdate = NavItem("检查更新", 14, 172);
             NavUpdate.Click += delegate { ShowUpdate(); };
 
-            nav.Controls.AddRange(new Control[] { Back, NavSettings, g2, NavUpdate });
+            NavProfile.Click += delegate { ShowPageProfile(); };
+            nav.Controls.AddRange(new Control[] { Back, NavProfile, NavSettings, g2, NavUpdate });
 
             // ---------------- 右内容 ----------------
             Panel body = new Panel();
@@ -206,7 +215,88 @@ namespace LanTalk
 
             PageUpdate.Controls.AddRange(new Control[] { t, VersionLabel, OpenReleases, steps, Drop, UpdateHint });
 
-            body.Controls.AddRange(new Control[] { PageSettings, PageUpdate });
+            // ---------------- 个人资料页 ----------------
+            PageProfile = new Panel();
+            PageProfile.SetBounds(0, 0, w - NavW, h);
+            PageProfile.BackColor = Theme.MainBg;
+            PageProfile.Visible = false;
+
+            Label pt = new Label();
+            pt.Text = "个人资料";
+            pt.Font = Theme.FontTitle;
+            pt.ForeColor = Theme.TextPrimary;
+            pt.BackColor = Color.Transparent;
+            pt.SetBounds(24, 20, 300, 26);
+
+            Label ln = new Label();
+            ln.Text = "显示名字";
+            ln.Font = Theme.FontUi;
+            ln.ForeColor = Theme.TextSecondary;
+            ln.BackColor = Color.Transparent;
+            ln.SetBounds(24, 56, 200, 20);
+
+            NameInput = new DarkInput();
+            NameInput.Placeholder = Profile.FallbackName;
+            NameInput.SetBounds(24, 80, 340, 32);
+            NameInput.Text = Profile.HasCustomName ? Profile.Name : "";
+            NameInput.Box.Leave += delegate
+            {
+                Profile.SetName(NameInput.Text);
+                ProfileHint.ForeColor = Theme.TextMuted;
+                ProfileHint.Text = "已保存。当前显示名：" + Profile.Name + (Profile.HasCustomName ? "" : "（机器名）");
+            };
+
+            Label la = new Label();
+            la.Text = "头像";
+            la.Font = Theme.FontUi;
+            la.ForeColor = Theme.TextSecondary;
+            la.BackColor = Color.Transparent;
+            la.SetBounds(24, 128, 200, 20);
+
+            AvatarBox = new PictureBox();
+            AvatarBox.SetBounds(24, 152, 96, 96);
+            AvatarBox.BackColor = Color.FromArgb(18, 18, 18);
+            AvatarBox.BorderStyle = BorderStyle.FixedSingle;
+            AvatarBox.SizeMode = PictureBoxSizeMode.Zoom;
+            AvatarBox.Image = Profile.Avatar;
+
+            AvatarPick = new FlatButton(FlatButton.Look.Primary);
+            AvatarPick.Text = "选择图片";
+            AvatarPick.TabStop = false;
+            AvatarPick.SetBounds(136, 152, 120, 32);
+            AvatarPick.Click += delegate
+            {
+                string msg;
+                if (Profile.PickAvatar(FindForm(), out msg))
+                {
+                    AvatarBox.Image = Profile.Avatar;
+                    ProfileHint.ForeColor = Theme.Accent;
+                }
+                else { ProfileHint.ForeColor = Theme.TextMuted; }
+                ProfileHint.Text = msg;
+            };
+
+            AvatarClear = new FlatButton(FlatButton.Look.Normal);
+            AvatarClear.Text = "清除头像";
+            AvatarClear.TabStop = false;
+            AvatarClear.SetBounds(136, 192, 120, 32);
+            AvatarClear.Click += delegate
+            {
+                Profile.ClearAvatar();
+                AvatarBox.Image = null;
+                ProfileHint.ForeColor = Theme.TextMuted;
+                ProfileHint.Text = "头像已清除。";
+            };
+
+            ProfileHint = new Label();
+            ProfileHint.Text = "名字会随通话发给对方；头像目前只有本机可见（协议暂不传头像）。";
+            ProfileHint.Font = Theme.FontSmall;
+            ProfileHint.ForeColor = Theme.TextMuted;
+            ProfileHint.BackColor = Color.Transparent;
+            ProfileHint.SetBounds(24, 268, 640, 40);
+
+            PageProfile.Controls.AddRange(new Control[] { pt, ln, NameInput, la, AvatarBox, AvatarPick, AvatarClear, ProfileHint });
+            body.Controls.AddRange(new Control[] { PageProfile, PageSettings, PageUpdate });
 
             Controls.AddRange(new Control[] { nav, body });
 
@@ -236,18 +326,31 @@ namespace LanTalk
             return b;
         }
 
+        public void ShowPageProfile()
+        {
+            PageProfile.Visible = true;
+            PageSettings.Visible = false;
+            PageUpdate.Visible = false;
+            NavProfile.Selected = true;
+            NavSettings.Selected = false;
+            NavUpdate.Selected = false;
+        }
         public void ShowPageSettings()
         {
+            PageProfile.Visible = false;
             PageSettings.Visible = true;
             PageUpdate.Visible = false;
+            NavProfile.Selected = false;
             NavSettings.Selected = true;
             NavUpdate.Selected = false;
         }
 
         public void ShowUpdate()
         {
+            PageProfile.Visible = false;
             PageSettings.Visible = false;
             PageUpdate.Visible = true;
+            NavProfile.Selected = false;
             NavSettings.Selected = false;
             NavUpdate.Selected = true;
             VersionLabel.Text = "当前版本 v" + AppVersion;
