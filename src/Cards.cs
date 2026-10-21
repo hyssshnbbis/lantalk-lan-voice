@@ -1,4 +1,4 @@
-// Cards.cs —— 界面的模块化板块
+﻿// Cards.cs —— 界面的模块化板块
 //
 // 每个板块都是独立的一类：自己持有自己那套控件、自己负责布局，对外只暴露
 // 字段（读值）和事件（通知）。MainForm 退化成"编排者"：
@@ -255,12 +255,12 @@ namespace LanTalk
         public readonly Label State;
 
         public const int CardW = 254;
-        public const int CardH = 172;
+        public const int CardH = 154;
 
-        public RoomCard(int x, int y) : base("会议室", x, y, CardW, CardH)
+        public RoomCard(int x, int y) : base("", x, y, CardW, CardH)
         {
-            Caption("房间号", PadH, ContentTop, 54);
-            int fy = ContentTop + CaptionH + CaptionGap;
+            Caption("房间号", PadH, 12, 54);
+            int fy = 12 + CaptionH + CaptionGap;
             Port = Input("", PadH, fy, 80, true);
             Join = Button("加入会议", PadH + 86, fy - 1, 70, 28, FlatButton.Look.Primary);
             LeaveButton = Button("离开会议", PadH + 162, fy - 1, 74, 28, FlatButton.Look.Normal);
@@ -321,25 +321,25 @@ namespace LanTalk
         public readonly Label OutPct;
 
         public const int CardW = 254;
-        public const int CardH = 144;
+        public const int CardH = 126;
 
-        public MeterCard(int x, int y) : base("电平与统计", x, y, CardW, CardH)
+        public MeterCard(int x, int y) : base("", x, y, CardW, CardH)
         {
-            InPct = Value("0%", Width - PadH - 60, ContentTop, 60);
-            Caption("话筒电平", PadH, ContentTop, 70);
+            InPct = Value("0%", Width - PadH - 60, 12, 60);
+            Caption("话筒电平", PadH, 12, 70);
             In = new MeterBar();
             In.BarColor = Theme.Accent;
-            In.SetBounds(PadH, ContentTop + 20, InnerW, 12);
+            In.SetBounds(PadH, 12 + 20, InnerW, 12);
             Controls.Add(In);
 
-            OutPct = Value("0%", Width - PadH - 60, ContentTop + 40, 60);
-            Caption("对方声音", PadH, ContentTop + 40, 70);
+            OutPct = Value("0%", Width - PadH - 60, 12 + 40, 60);
+            Caption("对方声音", PadH, 12 + 40, 70);
             Out = new MeterBar();
             Out.BarColor = Theme.Info;
-            Out.SetBounds(PadH, ContentTop + 60, InnerW, 12);
+            Out.SetBounds(PadH, 12 + 60, InnerW, 12);
             Controls.Add(Out);
 
-            Stats = Small("", PadH, ContentTop + 80, InnerW, 46);
+            Stats = Small("", PadH, 12 + 80, InnerW, 46);
         }
     }
 

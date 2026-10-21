@@ -158,6 +158,7 @@ namespace LanTalk
             // 就按参数意图切模式，免得命令行场景被界面默认值带偏。
             if (_args.Room > 0) _selMode.SelectedIndex = WayCard.IndexRoom;
             else if (_args.PeerIp != null) _selMode.SelectedIndex = WayCard.IndexP2P;
+            else _selMode.SelectedIndex = WayCard.IndexRoom;   // 无参数启动：默认多人会议室
 
             LoadChatHistory();
         }
@@ -175,13 +176,13 @@ namespace LanTalk
             _cardRoom = new RoomCard(12, 262);
             _cardRoom.Visible = false;
 
-            _cardMembers = new MembersCard(12, 440, 140);
+            _cardMembers = new MembersCard(12, 422, 158);
 
             _cardMeter = new MeterCard(12, 586);
 
             _lblVer = new Label();
             _lblVer.Text = "v1.1.0";
-            _lblVer.SetBounds(14, 744, 240, 18);
+            _lblVer.SetBounds(14, 726, 240, 18);
             _lblVer.Font = Theme.FontSmall;
             _lblVer.ForeColor = Theme.TextMuted;
             _lblVer.BackColor = Color.Transparent;
