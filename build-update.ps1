@@ -62,15 +62,16 @@ try {
 
     # 自检：包内必须恰好有一个 LanTalk.exe
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $entries = [System.IO.Compression.ZipFile]::OpenRead($zip).Entries
+    # 要销毁的是 ZipArchive 本身；Entries 是集合，没有 Dispose
+    $arc = [System.IO.Compression.ZipFile]::OpenRead($zip)
     try {
-        $names = @($entries | ForEach-Object { $_.FullName })
+        $names = @($arc.Entries | ForEach-Object { $_.FullName })
         if ($names.Count -ne 1 -or $names[0] -ne 'LanTalk.exe') {
             throw ("包内容不对，应只有 LanTalk.exe，实际：" + ($names -join ', '))
         }
-        Write-Host ("包内条目：" + $names[0] + "  " + $entries[0].Length + " 字节  ✓")
+        Write-Host ("包内条目：" + $names[0] + "  " + $arc.Entries[0].Length + " 字节  ✓")
     }
-    finally { $entries.Dispose() }
+    finally { $arc.Dispose() }
 }
 finally {
     Remove-Item -Recurse -Force $staging -ErrorAction SilentlyContinue
