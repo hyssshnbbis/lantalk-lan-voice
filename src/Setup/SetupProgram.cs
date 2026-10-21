@@ -1,4 +1,4 @@
-// SetupProgram.cs —— 安装程序入口、命令行、静默模式
+﻿// SetupProgram.cs —— 安装程序入口、命令行、静默模式
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -214,7 +214,7 @@ namespace LanTalk.Setup
             }
 
             InstallOptions o = new InstallOptions();
-            o.Dir = string.IsNullOrEmpty(a.Dir) ? InstallEngine.DefaultDir() : a.Dir;
+            o.Dir = string.IsNullOrEmpty(a.Dir) ? (InstallEngine.LocateExisting() ?? InstallEngine.DefaultDir()) : a.Dir;
             o.DesktopShortcut = !a.NoDesktop;
             o.StartMenuShortcut = !a.NoStartMenu;
             o.FirewallRule = !a.NoFirewall;

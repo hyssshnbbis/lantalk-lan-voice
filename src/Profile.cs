@@ -37,6 +37,22 @@ namespace LanTalk
 
         public static string FilePath { get { return Path.Combine(Dir, "profile.txt"); } }
 
+        /// <summary>ClientId 的 16 字节二进制形式（协议里用它，省得传 32 个字符）。</summary>
+        public static byte[] ClientIdBytes
+        {
+            get
+            {
+                byte[] b = new byte[16];
+                string h = ClientId;
+                for (int i = 0; i < 16 && (i * 2 + 1) < h.Length; i++)
+                {
+                    try { b[i] = Convert.ToByte(h.Substring(i * 2, 2), 16); }
+                    catch { b[i] = 0; }
+                }
+                return b;
+            }
+        }
+
         /// <summary>
         /// 本机持久身份（32 位十六进制）。第一次运行时生成并落盘，之后一直不变。
         /// 网络上的 InstanceId 每次启动都是新的随机值，没法用来索引"连接过的人"，

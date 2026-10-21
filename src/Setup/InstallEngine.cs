@@ -1,5 +1,6 @@
-// InstallEngine.cs —— 安装/卸载的实际动作：释放文件、建快捷方式、写注册表、放行防火墙
+﻿// InstallEngine.cs —— 安装/卸载的实际动作：释放文件、建快捷方式、写注册表、放行防火墙
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -67,7 +68,7 @@ namespace LanTalk.Setup
     {
         public const string AppName = "LanTalk";
         public const string DisplayName = "LanTalk 局域网语音通话";
-        public const string Version = "1.2.0";
+        public const string Version = "1.3.0";
         public const string Publisher = "LanTalk";
         public const int DefaultPort = 47800;
         public const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\LanTalk";
@@ -102,6 +103,114 @@ namespace LanTalk.Setup
             catch { return false; }
         }
 
+        /// <summary>
+        /// 找已安装的目录。先看注册表；注册表没有（被清理、被移动、绿色版解压的）
+        /// 就扫一遍常见位置，最后再看安装包自己所在的目录。
+        /// 找不到返回 null —— 这时才用默认目录，绝不会平白多装一份。
+        /// </summary>
+        /// <summary>解析 .lnk 指向的目标路径（用 WScript.Shell，靠反射调用，不引 COM 互操作程序集）。</summary>
+        private static string ShortcutTarget(string lnkPath)
+        {
+            try
+            {
+                Type t = Type.GetTypeFromProgID("WScript.Shell");
+                if (t == null) return null;
+                object shell = Activator.CreateInstance(t);
+                object sc = t.InvokeMember("CreateShortcut",
+                    System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { lnkPath });
+                if (sc == null) return null;
+                object target = sc.GetType().InvokeMember("TargetPath",
+                    System.Reflection.BindingFlags.GetProperty, null, sc, null);
+                return target == null ? null : target.ToString();
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// 从桌面和开始菜单的快捷方式反查安装目录。
+        /// 用于注册表被清理、或注册表里写的路径已经失效的情况。
+        /// </summary>
+        private static string FromShortcuts()
+        {
+            try
+            {
+                List<string> roots = new List<string>();
+                string desk = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                if (!string.IsNullOrEmpty(desk)) roots.Add(desk);
+                string sm = Environment.GetFolderPath(Environment.SpecialFolder.Programs);
+                if (!string.IsNullOrEmpty(sm)) roots.Add(sm);
+
+                for (int r = 0; r < roots.Count; r++)
+                {
+                    if (!Directory.Exists(roots[r])) continue;
+                    // 顶层 + 一层子目录，够覆盖「开始菜单\LanTalk\LanTalk.lnk」
+                    List<string> dirs = new List<string>();
+                    dirs.Add(roots[r]);
+                    try
+                    {
+                        string[] subs = Directory.GetDirectories(roots[r]);
+                        for (int i = 0; i < subs.Length && i < 200; i++) dirs.Add(subs[i]);
+                    }
+                    catch { }
+
+                    for (int d = 0; d < dirs.Count; d++)
+                    {
+                        string[] lnks;
+                        try { lnks = Directory.GetFiles(dirs[d], "*.lnk"); }
+                        catch { continue; }
+                        for (int i = 0; i < lnks.Length; i++)
+                        {
+                            string name = Path.GetFileNameWithoutExtension(lnks[i]);
+                            if (name == null || name.IndexOf("LanTalk", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                            string target = ShortcutTarget(lnks[i]);
+                            if (string.IsNullOrEmpty(target)) continue;
+                            if (!target.EndsWith(AppName + ".exe", StringComparison.OrdinalIgnoreCase)) continue;
+                            if (!File.Exists(target)) continue;
+                            return Normalize(Path.GetDirectoryName(target));
+                        }
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+        public static string LocateExisting()
+        {
+            try
+            {
+                string reg = InstalledDir();
+                if (!string.IsNullOrEmpty(reg) && File.Exists(Path.Combine(reg, AppName + ".exe"))) return reg;
+            }
+            catch { }
+
+            try
+            {
+                string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+                string pf86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+
+                List<string> cand = new List<string>();
+                if (!string.IsNullOrEmpty(local)) cand.Add(Path.Combine(local, @"Programs\LanTalk"));
+                if (!string.IsNullOrEmpty(pf)) cand.Add(Path.Combine(pf, "LanTalk"));
+                if (!string.IsNullOrEmpty(pf86)) cand.Add(Path.Combine(pf86, "LanTalk"));
+                // 安装包被用户放在程序目录旁边的常见情况
+                try { cand.Add(AppDomain.CurrentDomain.BaseDirectory); } catch { }
+
+                for (int i = 0; i < cand.Count; i++)
+                {
+                    if (string.IsNullOrEmpty(cand[i])) continue;
+                    if (File.Exists(Path.Combine(cand[i], AppName + ".exe"))) return Normalize(cand[i]);
+                }
+            }
+            catch { }
+
+            // 最后一条兜底：从桌面/开始菜单的快捷方式反查。
+            // 用户可能把程序装在任意目录，但快捷方式会指向它。
+            string fromLnk = FromShortcuts();
+            if (!string.IsNullOrEmpty(fromLnk)) return fromLnk;
+
+            return null;
+        }
         public static string InstalledDir()
         {
             try
@@ -123,7 +232,16 @@ namespace LanTalk.Setup
 
         public static bool Install(InstallOptions o, Action<int, string> progress)
         {
-            string dir = Normalize(o.Dir);
+            // 没显式指定目录时，优先沿用「已安装目录」。
+            // 否则覆盖安装会装到默认目录去，变成两份副本、注册表指向新的那份，
+            // 旧目录里的文件和卸载器就成了孤儿。
+            string requested = o.Dir;
+            if (string.IsNullOrEmpty(requested))
+            {
+                string installed = InstalledDir();
+                if (!string.IsNullOrEmpty(installed)) requested = installed;
+            }
+            string dir = Normalize(requested);
             o.Dir = dir;
             Step(progress, 2, "安装目录：" + dir);
 

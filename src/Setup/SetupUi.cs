@@ -1,4 +1,4 @@
-// SetupUi.cs —— 安装向导界面与卸载界面（纯代码构建，自带 DPI 缩放）
+﻿// SetupUi.cs —— 安装向导界面与卸载界面（纯代码构建，自带 DPI 缩放）
 using System;
 using System.Drawing;
 using System.IO;
@@ -67,7 +67,11 @@ namespace LanTalk.Setup
             _args = a;
             _s = DpiUi.Factor();
             Build();
-            _txtDir.Text = string.IsNullOrEmpty(a.Dir) ? InstallEngine.DefaultDir() : a.Dir;
+            // 路径必须和旧安装保持一致，否则新版装到别处会变成两份副本：
+            // 已有安装就用它的目录，没有才用默认目录；显式 --dir 优先级最高。
+            string installed = InstallEngine.LocateExisting();
+            string fallback = string.IsNullOrEmpty(installed) ? InstallEngine.DefaultDir() : installed;
+            _txtDir.Text = string.IsNullOrEmpty(a.Dir) ? fallback : a.Dir;
         }
 
         private void Build()

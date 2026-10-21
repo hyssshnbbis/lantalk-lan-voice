@@ -536,9 +536,12 @@ namespace LanTalk
         }
 
         // ================== 报文编解码 ==================
-        // 房间公告：[房间号 2][实例ID 4][名字 utf8]
+        // 房间公告见 RoomHeaderLen 处的说明
 
-        private const int RoomHeaderLen = 6;
+        // 新格式（1.3 起，不与旧版兼容）：
+        //   [端口 2][实例ID 4][ClientId 16][头像hash 4][名字 utf8...]
+        // 定长字段都放在名字前面，因为名字是变长的、占满剩余字节。
+        private const int RoomHeaderLen = 26;
 
         private byte[] BuildRoomPayload()
         {
@@ -552,9 +555,22 @@ namespace LanTalk
             p[3] = (byte)((id >> 8) & 0xFF);
             p[4] = (byte)((id >> 16) & 0xFF);
             p[5] = (byte)((id >> 24) & 0xFF);
+            // ClientId + 头像 hash：同一个人换台机器/换个端口也认得出来
+            byte[] cid = Profile.ClientIdBytes;
+            Buffer.BlockCopy(cid, 0, p, 6, 16);
+            int ah = 0;
+            if (_myAvatar != null && _myAvatar.Length > 0) ah = _myAvatar.Length ^ (_myAvatar[0] << 8);
+            p[22] = (byte)(ah & 0xFF);
+            p[23] = (byte)((ah >> 8) & 0xFF);
+            p[24] = (byte)((ah >> 16) & 0xFF);
+            p[25] = (byte)((ah >> 24) & 0xFF);
+
             if (nb.Length > 0) Buffer.BlockCopy(nb, 0, p, RoomHeaderLen, nb.Length);
             return p;
         }
+
+        internal static byte[] lastClientId;
+        internal static int lastAvatarHash;
 
         private static bool ParseRoom(byte[] payload, int len, out int port, out uint idNum, out string name)
         {
@@ -564,6 +580,13 @@ namespace LanTalk
             if (payload == null || len < RoomHeaderLen) return false;
             port = payload[0] | (payload[1] << 8);
             idNum = (uint)(payload[2] | (payload[3] << 8) | (payload[4] << 16) | (payload[5] << 24));
+            if (len >= 26)
+            {
+                byte[] cid = new byte[16];
+                Buffer.BlockCopy(payload, 6, cid, 0, 16);
+                lastClientId = cid;
+                lastAvatarHash = payload[22] | (payload[23] << 8) | (payload[24] << 16) | (payload[25] << 24);
+            }
             if (len > RoomHeaderLen) name = Encoding.UTF8.GetString(payload, RoomHeaderLen, len - RoomHeaderLen);
             return true;
         }
