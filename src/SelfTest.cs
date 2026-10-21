@@ -1,4 +1,4 @@
-// SelfTest.cs —— 自检（设备 / 编解码 / 抖动缓冲 / UDP 协议 / 端到端音频）与无界面运行模式
+﻿// SelfTest.cs —— 自检（设备 / 编解码 / 抖动缓冲 / UDP 协议 / 端到端音频）与无界面运行模式
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -58,6 +58,9 @@ namespace LanTalk
             TestDenoiseCompare();
             TestChime();
             TestChatWire();
+            TestImageWire();
+            TestImageE2E();
+            TestSelfUpdate();
             TestRoomProtocol();
             TestUdpProtocol();
             TestCodecPathPattern();
@@ -295,6 +298,241 @@ namespace LanTalk
         }
 
         // ---------- 3c. 会议室协议：互相发现 / 离开 ----------
+        /// <summary>图片端到端：A 发一张，B 必须收到完全一致的字节。</summary>
+        private static void TestImageE2E()
+        {
+            List<string> bad = new List<string>();
+            UdpPeer netA = new UdpPeer();
+            UdpPeer netB = new UdpPeer();
+            AudioPath apA = null, apB = null;
+            Conference cA = null, cB = null;
+            try
+            {
+                netA.Start("127.0.0.1", 0);
+                netB.Start("127.0.0.1", 0);
+                apA = new AudioPath(netA, VoiceCodec.Pcm16, Rate, FrameMs,
+                    delegate() { return new ToneSource(Rate, FrameMs); },
+                    delegate() { return new NullSink(Rate, FrameMs); });
+                apB = new AudioPath(netB, VoiceCodec.Pcm16, Rate, FrameMs,
+                    delegate() { return new ToneSource(Rate, FrameMs); },
+                    delegate() { return new NullSink(Rate, FrameMs); });
+                cA = new Conference(netA, apA, "甲");
+                cB = new Conference(netB, apB, "乙");
+                cA.Join(TestRoomPort);
+                cB.Join(TestRoomPort);
+                cA.AddManualPeer("127.0.0.1", netB.LocalPort);
+
+                DateTime deadline = DateTime.UtcNow.AddSeconds(6);
+                while (DateTime.UtcNow < deadline)
+                {
+                    cA.Tick(); cB.Tick();
+                    if (cA.MemberCount >= 1 && cB.MemberCount >= 1) break;
+                    Thread.Sleep(100);
+                }
+
+                // 造 6000 字节"图片"，跨多个分片
+                byte[] img = new byte[6000];
+                for (int i = 0; i < img.Length; i++) img[i] = (byte)((i * 17 + 3) & 0xFF);
+
+                byte[] got = null;
+                cB.ImageReceived += delegate(string who, byte[] d) { got = d; };
+
+                int chunks = cA.SendImage(img);
+                int expect = ImageWire.ChunkCount(img.Length);
+                if (chunks != expect) bad.Add("片数 " + chunks + " != " + expect);
+
+                deadline = DateTime.UtcNow.AddSeconds(5);
+                while (DateTime.UtcNow < deadline && got == null)
+                {
+                    cA.Tick(); cB.Tick();
+                    Thread.Sleep(30);
+                }
+
+                bool same = got != null && got.Length == img.Length;
+                if (same)
+                {
+                    for (int i = 0; i < img.Length; i++) if (got[i] != img[i]) { same = false; break; }
+                }
+                if (!same) bad.Add("收到的字节与原图不一致（收到 " + (got == null ? "null" : got.Length.ToString()) + " 字节）");
+            }
+            catch (Exception ex) { bad.Add("异常：" + ex.Message); }
+            finally
+            {
+                try { if (cA != null) cA.Dispose(); } catch { }
+                try { if (cB != null) cB.Dispose(); } catch { }
+                try { if (apA != null) apA.Dispose(); } catch { }
+                try { if (apB != null) apB.Dispose(); } catch { }
+                try { if (netA != null) netA.Dispose(); } catch { }
+                try { if (netB != null) netB.Dispose(); } catch { }
+            }
+
+            if (bad.Count == 0)
+                T.Ok("image_e2e", "6000 字节图片切成 " + ImageWire.ChunkCount(6000) + " 片，经真实 UDP 送达并逐字节一致");
+            else
+                T.Bad("image_e2e", string.Join("；", bad.ToArray()));
+        }
+
+        /// <summary>造一个只存不压的 zip（单条目），用来测就地更新。</summary>
+        private static byte[] MakeStoredZip(string entryName, byte[] data)
+        {
+            byte[] name = System.Text.Encoding.UTF8.GetBytes(entryName);
+            using (System.IO.MemoryStream ms = new System.IO.MemoryStream())
+            {
+                // 本地文件头
+                ms.Write(new byte[] { 0x50, 0x4b, 0x03, 0x04 }, 0, 4);
+                ms.Write(BitConverter.GetBytes((ushort)20), 0, 2);
+                ms.Write(BitConverter.GetBytes((ushort)0), 0, 2);
+                ms.Write(BitConverter.GetBytes((ushort)0), 0, 2);      // method = 0 (stored)
+                ms.Write(BitConverter.GetBytes((ushort)0), 0, 2);      // time
+                ms.Write(BitConverter.GetBytes((ushort)0), 0, 2);      // date
+                ms.Write(BitConverter.GetBytes((uint)0), 0, 4);        // crc（解压端不校验）
+                ms.Write(BitConverter.GetBytes((uint)data.Length), 0, 4);
+                ms.Write(BitConverter.GetBytes((uint)data.Length), 0, 4);
+                ms.Write(BitConverter.GetBytes((ushort)name.Length), 0, 2);
+                ms.Write(BitConverter.GetBytes((ushort)0), 0, 2);
+                ms.Write(name, 0, name.Length);
+                ms.Write(data, 0, data.Length);
+                int cdOff = (int)ms.Length;
+
+                // 中央目录
+                ms.Write(new byte[] { 0x50, 0x4b, 0x01, 0x02 }, 0, 4);
+                ms.Write(BitConverter.GetBytes((ushort)20), 0, 2);
+                ms.Write(BitConverter.GetBytes((ushort)20), 0, 2);
+                ms.Write(BitConverter.GetBytes((ushort)0), 0, 2);
+                ms.Write(BitConverter.GetBytes((ushort)0), 0, 2);
+                ms.Write(BitConverter.GetBytes((ushort)0), 0, 2);
+                ms.Write(BitConverter.GetBytes((ushort)0), 0, 2);
+                ms.Write(BitConverter.GetBytes((uint)0), 0, 4);
+                ms.Write(BitConverter.GetBytes((uint)data.Length), 0, 4);
+                ms.Write(BitConverter.GetBytes((uint)data.Length), 0, 4);
+                ms.Write(BitConverter.GetBytes((ushort)name.Length), 0, 2);
+                ms.Write(BitConverter.GetBytes((ushort)0), 0, 2);
+                ms.Write(BitConverter.GetBytes((ushort)0), 0, 2);
+                ms.Write(BitConverter.GetBytes((ushort)0), 0, 2);
+                ms.Write(BitConverter.GetBytes((ushort)0), 0, 2);
+                ms.Write(BitConverter.GetBytes((uint)0), 0, 4);
+                ms.Write(BitConverter.GetBytes((uint)0), 0, 4);
+                ms.Write(name, 0, name.Length);
+                int cdSize = (int)ms.Length - cdOff;
+
+                // EOCD
+                ms.Write(new byte[] { 0x50, 0x4b, 0x05, 0x06 }, 0, 4);
+                ms.Write(BitConverter.GetBytes((ushort)0), 0, 2);
+                ms.Write(BitConverter.GetBytes((ushort)0), 0, 2);
+                ms.Write(BitConverter.GetBytes((ushort)1), 0, 2);
+                ms.Write(BitConverter.GetBytes((ushort)1), 0, 2);
+                ms.Write(BitConverter.GetBytes((uint)cdSize), 0, 4);
+                ms.Write(BitConverter.GetBytes((uint)cdOff), 0, 4);
+                ms.Write(BitConverter.GetBytes((ushort)0), 0, 2);
+                return ms.ToArray();
+            }
+        }
+
+        /// <summary>zip 就地更新：正常替换 + 缺主程序时回滚。</summary>
+        private static void TestSelfUpdate()
+        {
+            List<string> bad = new List<string>();
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lntupd-" + Guid.NewGuid().ToString("N").Substring(0, 6));
+            try
+            {
+                Directory.CreateDirectory(dir);
+                string exe = System.IO.Path.Combine(dir, "LanTalk.exe");
+                string zip = System.IO.Path.Combine(dir, "upd.zip");
+                string badZip = System.IO.Path.Combine(dir, "bad.zip");
+
+                byte[] oldExe = new byte[200 * 1024];
+                for (int i = 0; i < oldExe.Length; i++) oldExe[i] = 0x11;
+                File.WriteAllBytes(exe, oldExe);
+
+                byte[] newExe = new byte[220 * 1024];
+                for (int i = 0; i < newExe.Length; i++) newExe[i] = 0x22;
+                File.WriteAllBytes(zip, MakeStoredZip("LanTalk.exe", newExe));
+
+                string msg;
+                bool ok = SelfUpdate.ApplyZip(zip, exe, out msg);
+                if (!ok) bad.Add("正常更新失败：" + msg);
+
+                byte[] after = File.ReadAllBytes(exe);
+                if (after.Length != newExe.Length || after[0] != 0x22) bad.Add("替换后的文件内容不对");
+                if (!File.Exists(SelfUpdate.BackupPath(exe))) bad.Add("没有留下 .old 备份");
+
+                // 缺主程序的包必须失败且不动原文件
+                File.WriteAllBytes(badZip, MakeStoredZip("readme.txt", new byte[] { 1, 2, 3 }));
+                byte[] before = File.ReadAllBytes(exe);
+                bool ok2 = SelfUpdate.ApplyZip(badZip, exe, out msg);
+                if (ok2) bad.Add("缺主程序的包居然更新成功了");
+                byte[] afterBad = File.ReadAllBytes(exe);
+                bool untouched = before.Length == afterBad.Length;
+                if (untouched) for (int i = 0; i < before.Length; i++) if (before[i] != afterBad[i]) { untouched = false; break; }
+                if (!untouched) bad.Add("失败后原文件被破坏了");
+            }
+            catch (Exception ex) { bad.Add("异常：" + ex.Message); }
+            finally { try { Directory.Delete(dir, true); } catch { } }
+
+            if (bad.Count == 0)
+                T.Ok("selfupdate_zip", "200KB -> 220KB 就地替换成功且留下 .old；缺主程序的包被拒且原文件逐字节未动");
+            else
+                T.Bad("selfupdate_zip", string.Join("；", bad.ToArray()));
+        }
+        /// <summary>图片分片：乱序重组、重复片、缺片超时、超限拒绝。</summary>
+        private static void TestImageWire()
+        {
+            List<string> bad = new List<string>();
+
+            byte[] data = new byte[5000];
+            for (int i = 0; i < data.Length; i++) data[i] = (byte)(i * 31 + 7);
+
+            int total = ImageWire.ChunkCount(data.Length);
+            List<byte[]> chunks = new List<byte[]>();
+            for (int i = 0; i < total; i++)
+            {
+                int off = i * ImageWire.ChunkPayload;
+                int len = Math.Min(ImageWire.ChunkPayload, data.Length - off);
+                chunks.Add(ImageWire.BuildChunk(0xABCD1234u, i, total, data, off, len));
+            }
+            if (chunks.Count != total) bad.Add("分片数对不上");
+
+            // 1) 倒序 + 混入重复片，必须还能拼回原样
+            byte[] got = null;
+            ImageAssembler asm1 = new ImageAssembler();
+            for (int i = chunks.Count - 1; i >= 0; i--) asm1.Add(chunks[i], chunks[i].Length, delegate(uint id, byte[] d) { got = d; });
+            asm1.Add(chunks[2], chunks[2].Length, delegate(uint id, byte[] d) { got = d; });
+            bool ok1 = got != null && got.Length == data.Length;
+            if (ok1)
+            {
+                for (int i = 0; i < data.Length; i++) if (got[i] != data[i]) { ok1 = false; break; }
+            }
+            if (!ok1) bad.Add("乱序+重复片重组失败");
+            if (asm1.Completed != 1) bad.Add("完成计数不对：" + asm1.Completed);
+
+            // 2) 少一片永远拼不齐，超时后应被清掉
+            byte[] got2 = null;
+            ImageAssembler asm2 = new ImageAssembler();
+            for (int i = 0; i < total - 1; i++) asm2.Add(chunks[i], chunks[i].Length, delegate(uint id, byte[] d) { got2 = d; });
+            if (got2 != null) bad.Add("缺片却报告完成");
+            asm2.Purge(DateTime.UtcNow.AddMilliseconds(ImageWire.ReasmTimeoutMs + 500));
+            if (asm2.DroppedTimeouts < 1) bad.Add("超时没有丢弃");
+
+            // 3) 声称的总片数超限，应直接拒
+            ImageAssembler asm3 = new ImageAssembler();
+            // 取"解析能过、但重组器按总字节判超限"的边界值：+2 正好是 ParseChunk 的上限
+            int huge = (ImageWire.MaxImageBytes / ImageWire.ChunkPayload) + 2;
+            byte[] lie = ImageWire.BuildChunk(0x11u, 0, huge, data, 0, 100);
+            asm3.Add(lie, lie.Length, null);
+            if (asm3.DroppedOversize < 1) bad.Add("超限没有被拒");
+
+            // 4) 坏包不能崩
+            ImageAssembler asm4 = new ImageAssembler();
+            asm4.Add(null, 0, null);
+            byte[] junk = new byte[] { 1, 2, 3 };
+            asm4.Add(junk, junk.Length, null);
+            asm4.Add(new byte[9], 9, null);   // 总片数 0，应被拒
+
+            if (bad.Count == 0)
+                T.Ok("image_wire", "5000 字节切成 " + total + " 片；倒序+重复片重组逐字节一致；缺片不报完成且超时丢弃；超限被拒；坏包不崩");
+            else
+                T.Bad("image_wire", string.Join("；", bad.ToArray()));
+        }
         /// <summary>聊天报文编解码：往返一致、超长截断、坏包不崩。</summary>
         private static void TestChatWire()
         {

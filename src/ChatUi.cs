@@ -11,6 +11,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
 using System.Windows.Forms;
 
 namespace LanTalk
@@ -22,8 +23,55 @@ namespace LanTalk
         public string Who = "";
         public string Text = "";
         public bool Self;
+        public byte[] Image;      // 非空表示这是一条图片消息（JPEG）
+        public Bitmap Thumb;      // 解码后的缩略图（缓存，避免每帧重解）
     }
 
+    /// <summary>点缩略图弹出的原图查看器：按屏幕大小等比缩放，Esc 或点击关闭。</summary>
+    internal static class ImageViewer
+    {
+        public static void Show(Control owner, byte[] jpeg)
+        {
+            if (jpeg == null || jpeg.Length == 0) return;
+            try
+            {
+                MemoryStream ms = new MemoryStream(jpeg);
+                Image img = Image.FromStream(ms);
+                Rectangle wa = Screen.PrimaryScreen.WorkingArea;
+                int maxW = (int)(wa.Width * 0.8), maxH = (int)(wa.Height * 0.8);
+                double k = Math.Min(1.0, Math.Min((double)maxW / img.Width, (double)maxH / img.Height));
+                int w = Math.Max(200, (int)(img.Width * k));
+                int h = Math.Max(150, (int)(img.Height * k));
+
+                Form f = new Form();
+                f.Text = "图片  " + img.Width + " × " + img.Height;
+                f.FormBorderStyle = FormBorderStyle.FixedDialog;
+                f.StartPosition = FormStartPosition.CenterParent;
+                f.MinimizeBox = false;
+                f.MaximizeBox = false;
+                f.BackColor = Color.FromArgb(24, 24, 24);
+                f.ClientSize = new Size(w + 16, h + 16);
+                f.KeyPreview = true;
+                f.KeyDown += delegate(object s, KeyEventArgs e) { if (e.KeyCode == Keys.Escape) f.Close(); };
+
+                PictureBox pb = new PictureBox();
+                pb.SizeMode = PictureBoxSizeMode.Zoom;
+                pb.Image = img;
+                pb.BackColor = Color.FromArgb(18, 18, 18);
+                pb.Dock = DockStyle.Fill;
+                pb.Cursor = Cursors.Hand;
+                pb.Click += delegate { f.Close(); };
+                f.Controls.Add(pb);
+
+                f.ShowDialog(owner == null ? null : owner.FindForm());
+                f.Dispose();
+                pb.Dispose();
+                img.Dispose();
+                ms.Dispose();
+            }
+            catch { }
+        }
+    }
     internal sealed class ChatFeed : Control
     {
         private readonly List<ChatMsg> _msgs = new List<ChatMsg>();
@@ -31,6 +79,8 @@ namespace LanTalk
         private readonly List<int> _heights = new List<int>();  // 每条消息占的高度
         private readonly List<int> _days = new List<int>();     // 是 1 表示这条前面插了日期分隔
         private int _scroll;
+        private readonly List<int> _imgHitIdx = new List<int>();
+        private readonly List<Rectangle> _imgHitRect = new List<Rectangle>();
         private bool _atBottom = true;
 
         private const int AvatarD = 26;
@@ -59,6 +109,7 @@ namespace LanTalk
 
         public void Add(ChatMsg m)
         {
+            if (m != null && m.Image != null && m.Thumb == null) m.Thumb = DecodeThumb(m.Image);
             _msgs.Add(m);
             Relayout();
             if (_atBottom) ScrollToBottom();
@@ -70,6 +121,31 @@ namespace LanTalk
             _msgs.Clear();
             _scroll = 0;
             Relayout();
+        }
+
+        /// <summary>把 JPEG 解成缩略图：最长边不超过 240x150，省内存。</summary>
+        public static Bitmap DecodeThumb(byte[] jpeg)
+        {
+            if (jpeg == null || jpeg.Length == 0) return null;
+            try
+            {
+                using (MemoryStream ms = new MemoryStream(jpeg))
+                using (Image raw = Image.FromStream(ms))
+                {
+                    double k = Math.Min(240.0 / raw.Width, 150.0 / raw.Height);
+                    if (k > 1.0) k = 1.0;
+                    int w = Math.Max(1, (int)(raw.Width * k));
+                    int h = Math.Max(1, (int)(raw.Height * k));
+                    Bitmap b = new Bitmap(w, h);
+                    using (Graphics g = Graphics.FromImage(b))
+                    {
+                        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                        g.DrawImage(raw, 0, 0, w, h);
+                    }
+                    return b;
+                }
+            }
+            catch { return null; }
         }
 
         protected override void OnResize(EventArgs e)
@@ -107,7 +183,11 @@ namespace LanTalk
                     _days.Add(newDay ? 1 : 0);
                     if (newDay) y += DateH;
 
-                    int textH = MeasureText(g, m.Text, ContentWidth);
+                    int textH;
+                    if (m.Image != null)
+                        textH = m.Thumb != null ? m.Thumb.Height : 60;
+                    else
+                        textH = MeasureText(g, m.Text, ContentWidth);
                     int h = Math.Max(AvatarD, 18 + textH);
                     _tops.Add(y);
                     _heights.Add(h);
@@ -151,6 +231,18 @@ namespace LanTalk
             Invalidate();
         }
 
+        protected override void OnMouseClick(MouseEventArgs e)
+        {
+            base.OnMouseClick(e);
+            for (int i = _imgHitRect.Count - 1; i >= 0; i--)
+            {
+                if (!_imgHitRect[i].Contains(e.Location)) continue;
+                int idx = _imgHitIdx[i];
+                if (idx >= 0 && idx < _msgs.Count && _msgs[idx].Image != null)
+                    ImageViewer.Show(this, _msgs[idx].Image);
+                return;
+            }
+        }
         protected override void OnMouseWheel(MouseEventArgs e)
         {
             base.OnMouseWheel(e);
@@ -171,6 +263,9 @@ namespace LanTalk
                 g.FillRectangle(b, ClientRectangle);
 
             g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            _imgHitIdx.Clear();
+            _imgHitRect.Clear();
 
             // 空状态：告诉用户这里会有东西
             if (_msgs.Count == 0)
@@ -208,10 +303,32 @@ namespace LanTalk
                     g.DrawString(m.When.ToString("HH:mm"), Theme.FontSmall, b,
                         TextLeft + MeasureNameWidth(g, m.Self ? "我" : m.Who) + 8, y + 2);
 
-                // 正文（自动换行）
-                Rectangle tr = new Rectangle(TextLeft, y + 18, ContentWidth, h - 18);
-                TextRenderer.DrawText(g, m.Text, Theme.FontUi, tr, Color.FromArgb(225, 225, 225),
-                    TextFormatFlags.WordBreak | TextFormatFlags.NoPadding);
+                if (m.Image != null)
+                {
+                    // 图片消息：画缩略图 + 一圈细边
+                    if (m.Thumb != null)
+                    {
+                        int tw = m.Thumb.Width, th = m.Thumb.Height;
+                        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                        g.DrawImage(m.Thumb, TextLeft, y + 18, tw, th);
+                        using (Pen pen = new Pen(Color.FromArgb(60, 60, 60)))
+                            g.DrawRectangle(pen, TextLeft, y + 18, tw, th);
+                        _imgHitIdx.Add(i);
+                        _imgHitRect.Add(new Rectangle(TextLeft, y + 18, tw, th));
+                    }
+                    else
+                    {
+                        using (SolidBrush b = new SolidBrush(Theme.TextMuted))
+                            g.DrawString("（图片解码失败）", Theme.FontUi, b, TextLeft, y + 18);
+                    }
+                }
+                else
+                {
+                    // 正文（自动换行）
+                    Rectangle tr = new Rectangle(TextLeft, y + 18, ContentWidth, h - 18);
+                    TextRenderer.DrawText(g, m.Text, Theme.FontUi, tr, Color.FromArgb(225, 225, 225),
+                        TextFormatFlags.WordBreak | TextFormatFlags.NoPadding);
+                }
             }
 
             DrawScrollbar(g);

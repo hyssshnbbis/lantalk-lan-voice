@@ -50,6 +50,8 @@ namespace LanTalk
         private DateTime _lastPeerPacketUtc = DateTime.UtcNow;
 
         private bool _peerRinging;
+        private readonly ImageAssembler _imgAsm = new ImageAssembler();
+        private uint _imgSeq;
         private bool _peerTalking;
         private volatile bool _autoAnswer;
         private volatile bool _presence;
@@ -62,8 +64,32 @@ namespace LanTalk
         /// <summary>收到一条聊天消息：(发送者名字, 正文)。</summary>
         public event Action<string, string> ChatReceived;
 
+        /// <summary>收齐一张图片：(发送者, JPEG 字节)。</summary>
+        public event Action<string, byte[]> ImageReceived;
+
         /// <summary>本机在对端屏幕上显示的名字（默认用机器名）。</summary>
         public string MyName = Environment.MachineName;
+
+        /// <summary>把一张 JPEG 切成分片发给当前对端。返回片数。</summary>
+        public int SendImage(byte[] jpeg)
+        {
+            if (jpeg == null || jpeg.Length == 0) return 0;
+            if (jpeg.Length > ImageWire.MaxImageBytes) return -1;
+
+            uint msgId = ((uint)(_net.InstanceId & 0xFFFF) << 16) | (uint)((++_imgSeq) & 0xFFFF);
+            int total = ImageWire.ChunkCount(jpeg.Length);
+            int sent = 0;
+            for (int ci = 0; ci < total; ci++)
+            {
+                int off = ci * ImageWire.ChunkPayload;
+                int len = Math.Min(ImageWire.ChunkPayload, jpeg.Length - off);
+                byte[] chunk = ImageWire.BuildChunk(msgId, ci, total, jpeg, off, len);
+                try { _net.SendControl(Pkt.ImageChunk, chunk, chunk.Length); sent++; }
+                catch { break; }
+            }
+            Log("发出图片：" + (jpeg.Length / 1024) + " KB，切成 " + total + " 片");
+            return sent;
+        }
 
         /// <summary>把一条文本消息发给当前对端。</summary>
         public bool SendChat(string text)
@@ -284,6 +310,15 @@ namespace LanTalk
                         StopAudio();
                         SetState(CallState.Idle);
                     }
+                    break;
+
+                case Pkt.ImageChunk:
+                    _imgAsm.Add(payload, len, delegate(uint id, byte[] data)
+                    {
+                        Log("收到图片 " + (data.Length / 1024) + " KB");
+                        Action<string, byte[]> ih = ImageReceived;
+                        if (ih != null) { try { ih("对方", data); } catch { } }
+                    });
                     break;
 
                 case Pkt.Chat:

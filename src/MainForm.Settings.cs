@@ -43,9 +43,36 @@ namespace LanTalk
         {
             try
             {
+                // 更新包（zip）：就地替换本程序然后重启
+                if (SelfUpdate.LooksLikeUpdateZip(file))
+                {
+                    FileInfo zi = new FileInfo(file);
+                    DialogResult rz = MessageBox.Show(this,
+                        "检测到更新包：\r\n" + zi.Name + "（" + (zi.Length / 1024) + " KB）\r\n\r\n"
+                        + "确认后会把 LanTalk.exe 换成更新包里的版本，然后自动重启。继续吗？",
+                        "安装更新", MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
+                    if (rz != DialogResult.OK) return;
+
+                    string exePath = Application.ExecutablePath;
+                    string msg;
+                    Log.Write("开始就地更新：" + file);
+                    if (!SelfUpdate.ApplyZip(file, exePath, out msg))
+                    {
+                        Log.Write("更新失败：" + msg);
+                        MessageBox.Show(this, msg, "更新失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    Log.Write("更新成功：" + msg + "，正在重启。");
+                    try { Process.Start(exePath); } catch { }
+                    Close();
+                    return;
+                }
+
+                // 完整安装包（exe）：交给安装程序
                 FileInfo fi = new FileInfo(file);
                 DialogResult r = MessageBox.Show(this,
-                    "检测到更新包：\r\n" + fi.Name + "（" + (fi.Length / 1024) + " KB）\r\n\r\n"
+                    "检测到完整安装包：\r\n" + fi.Name + "（" + (fi.Length / 1024) + " KB）\r\n\r\n"
                     + "确认后 LanTalk 会退出并启动安装程序。继续吗？",
                     "安装更新", MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
                 if (r != DialogResult.OK) return;
@@ -56,11 +83,10 @@ namespace LanTalk
             }
             catch (Exception ex)
             {
-                Log.Write("启动更新包失败：" + ex.Message);
-                MessageBox.Show(this, "启动安装程序失败：" + ex.Message, "更新",
+                Log.Write("启动更新失败：" + ex.Message);
+                MessageBox.Show(this, "更新失败：" + ex.Message, "更新",
                                 MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
-
     }
 }

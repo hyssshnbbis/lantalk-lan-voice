@@ -1,4 +1,4 @@
-﻿// Cards.cs —— 界面的模块化板块
+// Cards.cs —— 界面的模块化板块
 //
 // 每个板块都是独立的一类：自己持有自己那套控件、自己负责布局，对外只暴露
 // 字段（读值）和事件（通知）。MainForm 退化成"编排者"：
@@ -653,6 +653,7 @@ namespace LanTalk
         public readonly FlatButton SendButton;
 
         public event System.Action<string> SendRequested;
+        public event System.Action<byte[]> ImageSendRequested;
 
         public const int CardH = 380;
 
@@ -661,7 +662,7 @@ namespace LanTalk
         public ChatCard(int x, int y, int w, int h) : base("聊天", x, y, w, h)
         {
             int pw = w - PadH * 2;
-            int rowH = 30;
+            int rowH = 32;
             int viewH = h - ContentTop - rowH - RowGap - PadH - 4;
 
             RoundedSurface surface = new RoundedSurface();
@@ -673,23 +674,118 @@ namespace LanTalk
             View.TabStop = false;
             surface.Controls.Add(View);
 
+            // 拖图片文件进来也能发
+            AllowDrop = true;
+            DragEnter += OnImageDragEnter;
+            DragDrop += OnImageDragDrop;
+
+            // 输入框与发送按钮必须等高、同基线，否则看着是歪的
             int iy = ContentTop + viewH + RowGap + 4;
-            Draft = Input("说点什么，回车发送", PadH, iy, pw - 100, false);
+            Draft = Input("说点什么，回车发送", PadH, iy, pw - 96, false);
+            Draft.Height = rowH;
             Draft.Box.KeyDown += OnDraftKeyDown;
 
-            SendButton = Button("发送", PadH + pw - 92, iy - 1, 92, rowH + 2, FlatButton.Look.Primary);
+            SendButton = Button("发送", PadH + pw - 88, iy, 88, rowH, FlatButton.Look.Primary);
             SendButton.Click += delegate { Fire(); };
 
             Controls.Add(surface);
         }
 
+        private static bool IsImageFile(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return false;
+            string e = System.IO.Path.GetExtension(path).ToLowerInvariant();
+            return e == ".png" || e == ".jpg" || e == ".jpeg" || e == ".bmp" || e == ".gif";
+        }
+
+        private static string DroppedImage(DragEventArgs e)
+        {
+            try
+            {
+                if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return null;
+                string[] files = e.Data.GetData(DataFormats.FileDrop) as string[];
+                if (files == null || files.Length == 0) return null;
+                return IsImageFile(files[0]) ? files[0] : null;
+            }
+            catch { return null; }
+        }
+
+        private void OnImageDragEnter(object sender, DragEventArgs e)
+        {
+            e.Effect = DroppedImage(e) != null ? DragDropEffects.Copy : DragDropEffects.None;
+        }
+
+        private void OnImageDragDrop(object sender, DragEventArgs e)
+        {
+            string file = DroppedImage(e);
+            if (file == null) return;
+            try
+            {
+                using (Image raw = ImageCodec.LoadFile(file))
+                {
+                    if (raw == null) return;
+                    using (Bitmap small = ImageCodec.Shrink(raw))
+                    {
+                        int w, h;
+                        byte[] jpeg = ImageCodec.ToJpeg(small, out w, out h);
+                        if (jpeg == null || jpeg.Length == 0) return;
+                        System.Action<byte[]> cb = ImageSendRequested;
+                        if (cb != null) cb(jpeg);
+                    }
+                }
+            }
+            catch { }
+        }
+
         private void OnDraftKeyDown(object sender, KeyEventArgs e)
         {
+            // Ctrl+V：如果剪贴板里是图片，就直接发图片
+            if (e.Control && e.KeyCode == Keys.V && TryPasteImage())
+            {
+                e.SuppressKeyPress = true;
+                return;
+            }
             if (e.KeyCode == Keys.Enter && !e.Shift)
             {
                 e.SuppressKeyPress = true;
                 Fire();
             }
+        }
+
+        /// <summary>剪贴板里有图就压缩后发出去；没有就返回 false 让 Ctrl+V 走普通文字粘贴。</summary>
+        private bool TryPasteImage()
+        {
+            try
+            {
+                if (!Clipboard.ContainsImage()) return false;
+                using (Image raw = Clipboard.GetImage())
+                {
+                    if (raw == null) return false;
+                    using (Bitmap small = ImageCodec.Shrink(raw))
+                    {
+                        int w, h;
+                        byte[] jpeg = ImageCodec.ToJpeg(small, out w, out h);
+                        if (jpeg == null || jpeg.Length == 0) return false;
+                        System.Action<byte[]> cb = ImageSendRequested;
+                        if (cb == null) return false;
+                        cb(jpeg);
+                        return true;
+                    }
+                }
+            }
+            catch { return false; }
+        }
+
+        /// <summary>追加一条图片消息。</summary>
+        public void AddImage(string who, byte[] jpeg, bool self, DateTime when)
+        {
+            ChatMsg m = new ChatMsg();
+            m.Who = who;
+            m.Self = self;
+            m.When = when;
+            m.Image = jpeg;
+            m.Text = "";
+            View.Add(m);
         }
 
         private void Fire()

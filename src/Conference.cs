@@ -58,6 +58,8 @@ namespace LanTalk
         private const double JoinChimeSettleSec = 2.5;
         private DateTime _joinedAt = DateTime.MinValue;
         private readonly object _lock = new object();
+        private readonly ImageAssembler _imgAsm = new ImageAssembler();
+        private uint _imgSeq;
 
         private volatile bool _joined;
         private int _roomPort;
@@ -69,6 +71,9 @@ namespace LanTalk
 
         /// <summary>收到一条聊天消息：(发送者名字, 正文)。</summary>
         public event Action<string, string> ChatReceived;
+
+        /// <summary>收齐一张图片：(发送者, JPEG 字节)。</summary>
+        public event Action<string, byte[]> ImageReceived;
 
         public bool Joined { get { return _joined; } }
         public int RoomPort { get { lock (_lock) return _roomPort; } }
@@ -304,6 +309,19 @@ namespace LanTalk
         {
             if (!_joined) return;
 
+            // 图片分片：拼齐后抛事件（按来源地址标注发送者）
+            if (p == Pkt.ImageChunk)
+            {
+                string imgWho = src == null ? "对方" : src.Address.ToString();
+                _imgAsm.Add(payload, len, delegate(uint id, byte[] data)
+                {
+                    Log("收到图片 " + (data.Length / 1024) + " KB，来自 " + imgWho);
+                    Action<string, byte[]> h = ImageReceived;
+                    if (h != null) { try { h(imgWho, data); } catch { } }
+                });
+                return;
+            }
+
             // 文本消息：同样要求和公告一样"已加入"，但不需要房间号校验
             // （只发给已认识的成员，走单播而不是广播）
             if (p == Pkt.Chat)
@@ -538,6 +556,35 @@ namespace LanTalk
                 catch { }
             }
             return any;
+        }
+
+        /// <summary>把一张 JPEG 切成分片发给房间里所有成员。返回片数，0 表示没发出去。</summary>
+        public int SendImage(byte[] jpeg)
+        {
+            if (!_joined || jpeg == null || jpeg.Length == 0) return 0;
+            if (jpeg.Length > ImageWire.MaxImageBytes) return -1;
+
+            uint msgId = ((uint)(MyId & 0xFFFF) << 16) | (uint)((++_imgSeq) & 0xFFFF);
+            int total = ImageWire.ChunkCount(jpeg.Length);
+            int sent = 0;
+
+            IPEndPoint[] peers = _net.Peers;
+            for (int ci = 0; ci < total; ci++)
+            {
+                int off = ci * ImageWire.ChunkPayload;
+                int len = Math.Min(ImageWire.ChunkPayload, jpeg.Length - off);
+                byte[] chunk = ImageWire.BuildChunk(msgId, ci, total, jpeg, off, len);
+                bool any = false;
+                for (int i = 0; i < peers.Length; i++)
+                {
+                    try { _net.SendControl(Pkt.ImageChunk, chunk, chunk.Length, peers[i]); any = true; }
+                    catch { }
+                }
+                if (!any) break;
+                sent++;
+            }
+            Log("发出图片：" + (jpeg.Length / 1024) + " KB，切成 " + total + " 片");
+            return sent;
         }
 
         private void RaiseChat(string who, string text)

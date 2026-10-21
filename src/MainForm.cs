@@ -160,6 +160,7 @@ namespace LanTalk
             else if (_args.PeerIp != null) _selMode.SelectedIndex = WayCard.IndexP2P;
             else _selMode.SelectedIndex = WayCard.IndexRoom;   // 无参数启动：默认多人会议室
 
+            try { SelfUpdate.CleanupOld(Application.ExecutablePath); } catch { }
             LoadChatHistory();
         }
 
@@ -176,13 +177,13 @@ namespace LanTalk
             _cardRoom = new RoomCard(12, 262);
             _cardRoom.Visible = false;
 
-            _cardMembers = new MembersCard(12, 422, 158);
+            _cardMembers = new MembersCard(12, 440, 158);
 
-            _cardMeter = new MeterCard(12, 586);
+            _cardMeter = new MeterCard(12, 604);
 
             _lblVer = new Label();
-            _lblVer.Text = "v1.1.0";
-            _lblVer.SetBounds(14, 726, 240, 18);
+            _lblVer.Text = "v1.2.0";
+            _lblVer.SetBounds(14, 738, 240, 18);
             _lblVer.Font = Theme.FontSmall;
             _lblVer.ForeColor = Theme.TextMuted;
             _lblVer.BackColor = Color.Transparent;
@@ -298,6 +299,7 @@ namespace LanTalk
 
             // 日志与成员
             _cardChat.SendRequested += delegate(string t) { OnChatSend(t); };
+            _cardChat.ImageSendRequested += delegate(byte[] j) { OnChatSendImage(j); };
 
             _txtLog = _cardLog.Log;
             _lstMembers = _cardMembers.List;
@@ -625,6 +627,7 @@ namespace LanTalk
             _session = new Session(_net, _audio);
             _session.MyName = _myName;
             _session.ChatReceived += OnChatReceived;
+            _session.ImageReceived += OnChatImageReceived;
             _session.Notice += delegate(string m) { Log.Write(m); };
             _session.StateChanged += OnSessionStateChanged;
             _session.PresencePing = true;
@@ -641,6 +644,7 @@ namespace LanTalk
 
             _conference = new Conference(_net, _audio, _myName);
             _conference.ChatReceived += OnChatReceived;
+            _conference.ImageReceived += OnChatImageReceived;
             _conference.Notice += delegate(string m) { Log.Write(m); };
             _conference.Changed += OnConferenceChanged;
 

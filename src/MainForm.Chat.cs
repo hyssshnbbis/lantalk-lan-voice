@@ -39,6 +39,31 @@ namespace LanTalk
             if (!sent) Log.Write("聊天没发出去：当前既不在会议室，也没有接通的一对一通话。");
         }
 
+        /// <summary>自己发一张图（剪贴板粘贴触发）。</summary>
+        private void OnChatSendImage(byte[] jpeg)
+        {
+            if (jpeg == null || jpeg.Length == 0) return;
+            int sent = 0;
+            try
+            {
+                if (_conference != null && _conference.Joined) sent = _conference.SendImage(jpeg);
+                else if (_session != null && _session.State == CallState.InCall) sent = _session.SendImage(jpeg);
+            }
+            catch (Exception ex) { Log.Write("发送图片失败：" + ex.Message); }
+
+            DateTime now = DateTime.Now;
+            _cardChat.AddImage("我", jpeg, true, now);
+            if (sent <= 0) Log.Write("图片没发出去：当前既不在会议室，也没有接通的一对一通话。");
+        }
+
+        /// <summary>收到对方发来的图片。</summary>
+        private void OnChatImageReceived(string who, byte[] jpeg)
+        {
+            if (jpeg == null || jpeg.Length == 0) return;
+            _cardChat.AddImage(who, jpeg, false, DateTime.Now);
+            Log.Write("收到图片 " + (jpeg.Length / 1024) + " KB，来自 " + who);
+        }
+
         private void OnChatReceived(string who, string text)
         {
             DateTime now = DateTime.Now;

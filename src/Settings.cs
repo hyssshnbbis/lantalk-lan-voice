@@ -55,7 +55,8 @@ namespace LanTalk
                 if (files == null || files.Length == 0) return null;
                 string f = files[0];
                 if (!File.Exists(f)) return null;
-                if (!f.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) return null;
+                if (!f.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
+                    !SelfUpdate.LooksLikeUpdateZip(f)) return null;
                 return f;
             }
             catch { return null; }
@@ -89,7 +90,7 @@ namespace LanTalk
                 sf.Alignment = StringAlignment.Center;
                 sf.LineAlignment = StringAlignment.Center;
                 using (SolidBrush b = new SolidBrush(_hot ? Theme.Accent : Theme.TextSecondary))
-                    g.DrawString("把下载好的安装包（LanTalk-Setup-x.y.z.exe）拖到这里", Theme.FontUi, b,
+                    g.DrawString("把更新包（LanTalk-x.y.z-update.zip）或完整安装包（.exe）拖到这里", Theme.FontUi, b,
                                  new RectangleF(8, 8, Width - 16, Height - 16), sf);
             }
         }
@@ -98,7 +99,7 @@ namespace LanTalk
     /// <summary>设置页：左导航 + 右内容。</summary>
     internal sealed class SettingsPanel : Panel
     {
-        public const string AppVersion = "1.1.0";
+        public const string AppVersion = "1.2.0";
         public const string ReleasesUrl = "https://github.com/hyssshnbbis/lantalk-lan-voice/releases";
 
         public readonly DeviceCard Device;

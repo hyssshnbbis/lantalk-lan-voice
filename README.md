@@ -47,7 +47,7 @@
 
 ### 方式一：用安装程序（推荐给不熟命令行的人）
 
-双击 `dist\LanTalk-Setup-1.1.0.exe`：
+双击 `dist\LanTalk-Setup-1.2.0.exe`：
 
 ![安装向导](assets/ui-setup.png)
 
@@ -60,7 +60,7 @@
 
 ```powershell
 # 静默安装到指定目录，不放行防火墙、不自动启动
-.\dist\LanTalk-Setup-1.1.0.exe --silent --dir "D:\Tools\LanTalk" --no-firewall --no-launch
+.\dist\LanTalk-Setup-1.2.0.exe --silent --dir "D:\Tools\LanTalk" --no-firewall --no-launch
 
 # 静默卸载（用安装目录里的卸载程序）
 & "$env:LOCALAPPDATA\Programs\LanTalk\Uninstall.exe" --silent
@@ -553,7 +553,7 @@ dist\LanTalk.exe --selftest
 离线语音项目\
 ├─ dist\
 │   ├─ LanTalk.exe                  免安装单文件（约 120 KB）
-│   └─ LanTalk-Setup-1.1.0.exe      安装程序单文件（约 190 KB，内嵌主程序）
+│   └─ LanTalk-Setup-1.2.0.exe      安装程序单文件（约 190 KB，内嵌主程序）
 ├─ src\                             主程序源码（C# 5 / .NET Framework 4.0）
 │   ├─ Mm.cs                        winmm 互操作、录音/放音设备封装
 │   ├─ AudioPath.cs                 µ-law 编解码、抖动缓冲、多路混音器、采集↔网络↔播放
@@ -730,3 +730,80 @@ dist\LanTalk.exe --selftest
 布局走**盒子模型**：`PadH` 是左右内边距，`ContentTop` 是标题区下方的内容起点，
 行位置一律写成 `ContentTop + 偏移` 或 `RowY(n)`，不再出现散落的魔法数。
 所有尺寸都是 96 DPI 逻辑值，最后由 `ApplyDpiScale` 统一乘系数。
+
+---
+
+## 16. 图片消息（1.2.0 新增）
+
+聊天里可以发图，三种入口：**Ctrl+V 粘贴**、**把图片文件拖进聊天区**。
+
+### 为什么要自己做分片
+
+UDP 单包上限约 64KB，而且不保证送达。一张图必须先切成小块再按消息号拼回来。
+
+分片头 9 字节：
+
+```
+[消息号 4][分片序号 2][分片总数 2][flags 1]
+```
+
+每片承载 **900 字节**——加上 UDP/IP 头仍远小于 MTU，不会再被 IP 切一层。
+
+| 能力 | 做法 |
+| --- | --- |
+| 乱序容忍 | 按序号落进数组，到齐才算完成 |
+| 重复片 | 用 `Got[]` 标记，重复到达直接忽略 |
+| 缺片超时 | 8 秒没凑齐整块丢弃 |
+| 总量上限 | 单张 3MB，解析期和重组期各拦一道 |
+| 坏包 | 序号越界、总片数为 0、长度不足全部安全返回，不抛异常 |
+
+### 体积控制
+
+发之前先压：最长边限 **1280**、JPEG 质量 **72**；如果压完还超 3MB，自动降质量重压（最多 4 轮，最低到 30）。
+
+收下来显示的是最长边 240×150 的缩略图，**点击可看原图**（按屏幕 80% 等比缩放）。
+
+### 自检覆盖
+
+```
+image_wire   切分/重组往返一致；倒序+重复片仍逐字节一致；
+             缺片不报完成且超时丢弃；超限被拒；坏包不崩
+image_e2e    6000 字节图片切成 7 片，经真实 UDP 送达并逐字节一致
+```
+
+---
+
+## 17. 更新与两种包体
+
+发布时**同时给两个包**，用途不同：
+
+| 包体 | 文件名 | 用途 |
+| --- | --- | --- |
+| **更新包** | `LanTalk-x.y.z-update.zip` | 只含 `LanTalk.exe`。在程序里「检查更新 → 拖进去」，**就地替换**后自动重启，秒级完成 |
+| **完整包** | `LanTalk-Setup-x.y.z.exe` | 安装程序，含卸载器、快捷方式、防火墙规则。全新安装用它 |
+
+更新包比完整包小一半多，因为只装一个 exe。
+
+### 就地替换怎么做的
+
+运行中的 exe 不能被覆盖，只能改名：
+
+```
+1. 解压 zip 里的 LanTalk.exe 到临时目录
+2. 校验大小（<100KB 或 >20MB 直接拒）
+3. 正在运行的 LanTalk.exe → 改名 LanTalk.exe.old
+4. 新 exe 拷成 LanTalk.exe
+5. 启动新 exe，退出自己
+6. 下次启动时删掉 .old
+```
+
+**任何一步失败都回滚**（把 `.old` 改回原名），不会把自己搞成打不开的状态。
+
+解压是自己实现的——`System.IO.Compression.ZipFile` 是 .NET 4.5 才有的，我们的编译目标是 4.0，所以手写了 ZIP 解析：读中央目录找到 `LanTalk.exe`，支持 stored 与 deflate 两种方式，用 .NET 2.0 就有的 `DeflateStream` 解压，并设 20MB 上限防解压炸弹。
+
+### 自检覆盖
+
+```
+selfupdate_zip   200KB -> 220KB 就地替换成功且留下 .old；
+                 缺主程序的包被拒且原文件逐字节未动
+```
