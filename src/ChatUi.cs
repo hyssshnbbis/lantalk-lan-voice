@@ -11,6 +11,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Windows.Forms;
 
@@ -27,6 +28,39 @@ namespace LanTalk
         public Bitmap Thumb;      // 解码后的缩略图（缓存，避免每帧重解）
     }
 
+    /// <summary>把图片字节存到用户选的位置（默认给个带时间戳的文件名）。</summary>
+    internal static class ImageSaver
+    {
+        public static bool Save(IWin32Window owner, byte[] jpeg)
+        {
+            if (jpeg == null || jpeg.Length == 0) return false;
+            try
+            {
+                SaveFileDialog dlg = new SaveFileDialog();
+                dlg.Title = "保存图片";
+                dlg.Filter = "JPEG 图片 (*.jpg)|*.jpg|PNG 图片 (*.png)|*.png|所有文件 (*.*)|*.*";
+                dlg.FilterIndex = 1;
+                dlg.FileName = "LanTalk-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".jpg";
+                dlg.AddExtension = true;
+                if (dlg.ShowDialog(owner) != DialogResult.OK) return false;
+
+                string path = dlg.FileName;
+                if (path.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 选了 png 就转一次，避免存下来的扩展名和内容不符
+                    using (MemoryStream ms = new MemoryStream(jpeg))
+                    using (Image img = Image.FromStream(ms))
+                        img.Save(path, ImageFormat.Png);
+                }
+                else
+                {
+                    File.WriteAllBytes(path, jpeg);
+                }
+                return true;
+            }
+            catch { return false; }
+        }
+    }
     /// <summary>点缩略图弹出的原图查看器：按屏幕大小等比缩放，Esc 或点击关闭。</summary>
     internal static class ImageViewer
     {
@@ -50,7 +84,8 @@ namespace LanTalk
                 f.MinimizeBox = false;
                 f.MaximizeBox = false;
                 f.BackColor = Color.FromArgb(24, 24, 24);
-                f.ClientSize = new Size(w + 16, h + 16);
+                int barH = 46;
+                f.ClientSize = new Size(w + 16, h + 16 + barH);
                 f.KeyPreview = true;
                 f.KeyDown += delegate(object s, KeyEventArgs e) { if (e.KeyCode == Keys.Escape) f.Close(); };
 
@@ -58,9 +93,29 @@ namespace LanTalk
                 pb.SizeMode = PictureBoxSizeMode.Zoom;
                 pb.Image = img;
                 pb.BackColor = Color.FromArgb(18, 18, 18);
-                pb.Dock = DockStyle.Fill;
+                pb.SetBounds(0, 0, w + 16, h + 16);
                 pb.Cursor = Cursors.Hand;
                 pb.Click += delegate { f.Close(); };
+                Panel bar = new Panel();
+                bar.SetBounds(0, h + 16, w + 16, barH);
+                bar.BackColor = Color.FromArgb(30, 30, 30);
+
+                FlatButton save = new FlatButton(FlatButton.Look.Primary);
+                save.Text = "保存图片";
+                save.TabStop = false;
+                save.SetBounds(Math.Max(12, (w + 16) / 2 - 60), 8, 120, 30);
+                save.Click += delegate { ImageSaver.Save(f, jpeg); };
+
+                Label hint = new Label();
+                hint.Text = "Esc 或点击图片关闭";
+                hint.Font = Theme.FontSmall;
+                hint.ForeColor = Theme.TextMuted;
+                hint.BackColor = Color.Transparent;
+                hint.SetBounds(bar.Controls.Count >= 0 ? 12 : 12, (barH - 16) / 2, 200, 16);
+
+                bar.Controls.Add(save);
+                bar.Controls.Add(hint);
+                f.Controls.Add(bar);
                 f.Controls.Add(pb);
 
                 f.ShowDialog(owner == null ? null : owner.FindForm());
@@ -231,6 +286,42 @@ namespace LanTalk
             Invalidate();
         }
 
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (e.Button != MouseButtons.Right) return;
+
+            for (int i = _imgHitRect.Count - 1; i >= 0; i--)
+            {
+                if (!_imgHitRect[i].Contains(e.Location)) continue;
+                int idx = _imgHitIdx[i];
+                if (idx < 0 || idx >= _msgs.Count || _msgs[idx].Image == null) return;
+                byte[] data = _msgs[idx].Image;
+
+                ContextMenuStrip menu = new ContextMenuStrip();
+                menu.Renderer = new ToolStripProfessionalRenderer(new DarkMenuColors());
+                menu.BackColor = Color.FromArgb(34, 34, 34);
+                menu.ForeColor = Theme.TextPrimary;
+                menu.Font = Theme.FontUi;
+                menu.ShowImageMargin = false;
+                menu.Padding = new Padding(0, 4, 0, 4);
+
+                ToolStripMenuItem miView = new ToolStripMenuItem("查看原图");
+                miView.ForeColor = Theme.TextPrimary;
+                miView.Padding = new Padding(10, 3, 14, 3);
+                miView.Click += delegate { ImageViewer.Show(this, data); };
+
+                ToolStripMenuItem miSave = new ToolStripMenuItem("保存图片…");
+                miSave.ForeColor = Theme.TextPrimary;
+                miSave.Padding = new Padding(10, 3, 14, 3);
+                miSave.Click += delegate { ImageSaver.Save(FindForm(), data); };
+
+                menu.Items.Add(miView);
+                menu.Items.Add(miSave);
+                menu.Show(this, e.Location);
+                return;
+            }
+        }
         protected override void OnMouseClick(MouseEventArgs e)
         {
             base.OnMouseClick(e);

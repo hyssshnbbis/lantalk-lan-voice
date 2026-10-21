@@ -830,22 +830,6 @@ namespace LanTalk
             catch { }
         }
 
-        /// <summary>深色下拉菜单配色。</summary>
-        private sealed class DarkMenuColors : ProfessionalColorTable
-        {
-            public override Color ToolStripDropDownBackground { get { return Color.FromArgb(34, 34, 34); } }
-            public override Color ImageMarginGradientBegin { get { return Color.FromArgb(34, 34, 34); } }
-            public override Color ImageMarginGradientMiddle { get { return Color.FromArgb(34, 34, 34); } }
-            public override Color ImageMarginGradientEnd { get { return Color.FromArgb(34, 34, 34); } }
-            public override Color MenuBorder { get { return Color.FromArgb(58, 58, 58); } }
-            public override Color MenuItemBorder { get { return Color.FromArgb(58, 58, 58); } }
-            public override Color MenuItemSelected { get { return Color.FromArgb(56, 56, 56); } }
-            public override Color MenuItemSelectedGradientBegin { get { return Color.FromArgb(56, 56, 56); } }
-            public override Color MenuItemSelectedGradientEnd { get { return Color.FromArgb(56, 56, 56); } }
-            public override Color MenuItemPressedGradientBegin { get { return Color.FromArgb(56, 56, 56); } }
-            public override Color MenuItemPressedGradientEnd { get { return Color.FromArgb(56, 56, 56); } }
-        }
-
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
@@ -1245,6 +1229,21 @@ namespace LanTalk
     }
 
     /// <summary>统一的输入框外观（TextBox 的边框色改不了，只能用深底 + 浅字）。</summary>
+    /// <summary>深色下拉/右键菜单的统一配色，DarkSelect 与聊天消息菜单共用。</summary>
+    internal sealed class DarkMenuColors : ProfessionalColorTable
+    {
+        public override Color ToolStripDropDownBackground { get { return Color.FromArgb(34, 34, 34); } }
+        public override Color ImageMarginGradientBegin { get { return Color.FromArgb(34, 34, 34); } }
+        public override Color ImageMarginGradientMiddle { get { return Color.FromArgb(34, 34, 34); } }
+        public override Color ImageMarginGradientEnd { get { return Color.FromArgb(34, 34, 34); } }
+        public override Color MenuBorder { get { return Color.FromArgb(58, 58, 58); } }
+        public override Color MenuItemBorder { get { return Color.FromArgb(58, 58, 58); } }
+        public override Color MenuItemSelected { get { return Color.FromArgb(56, 56, 56); } }
+        public override Color MenuItemSelectedGradientBegin { get { return Color.FromArgb(56, 56, 56); } }
+        public override Color MenuItemSelectedGradientEnd { get { return Color.FromArgb(56, 56, 56); } }
+        public override Color MenuItemPressedGradientBegin { get { return Color.FromArgb(56, 56, 56); } }
+        public override Color MenuItemPressedGradientEnd { get { return Color.FromArgb(56, 56, 56); } }
+    }
     internal static class FieldStyle
     {
         public static void Apply(TextBox t)
