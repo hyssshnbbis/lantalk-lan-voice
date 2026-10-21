@@ -67,7 +67,7 @@ namespace LanTalk.Setup
     {
         public const string AppName = "LanTalk";
         public const string DisplayName = "LanTalk 局域网语音通话";
-        public const string Version = "1.0.0";
+        public const string Version = "1.1.0";
         public const string Publisher = "LanTalk";
         public const int DefaultPort = 47800;
         public const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\LanTalk";

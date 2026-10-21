@@ -9,10 +9,13 @@
     注意：本文件必须保存为「UTF-8 带 BOM」（Windows PowerShell 5.1 的要求）。
 #>
 [CmdletBinding()]
+# 注意：这里的端口全部落在 309xx 测试段。
+# 程序默认端口是 47830、默认房间号是 47800 —— 那是给人真实通信用，
+# 测试绝不能占用或广播到那些端口，否则会打扰正在通话的用户。
 param(
-    [int]$GuiPort = 47830,
-    [int]$CallerPort = 47831,
-    [int]$RoomPort = 47890,
+    [int]$GuiPort = 30921,
+    [int]$CallerPort = 30922,
+    [int]$RoomPort = 30930,
     [string]$OutDir = 'dist'
 )
 

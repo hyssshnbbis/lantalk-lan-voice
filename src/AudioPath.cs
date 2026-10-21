@@ -244,14 +244,71 @@ namespace LanTalk
     /// </summary>
     internal sealed class Mixer : IAudioFeeder
     {
+        private sealed class ActiveChime
+        {
+            public short[] Samples;
+            public int Pos;
+        }
+
         private readonly AudioPath _owner;
         private byte[] _tmp;
         private int[] _acc;
         private int _peak;
 
+        private readonly List<ActiveChime> _chimes = new List<ActiveChime>();
+        private readonly object _chimeLock = new object();
+        private const int MaxConcurrentChimes = 4;
+
         public int Peak { get { return _peak; } }
 
         public Mixer(AudioPath owner) { _owner = owner; }
+
+        /// <summary>把一个提示音排进混音队列。多个同时触发会叠加，所以限制了并发数。</summary>
+        public void Enqueue(short[] samples)
+        {
+            if (samples == null || samples.Length == 0) return;
+            lock (_chimeLock)
+            {
+                if (_chimes.Count >= MaxConcurrentChimes) return;
+                ActiveChime c = new ActiveChime();
+                c.Samples = samples;
+                c.Pos = 0;
+                _chimes.Add(c);
+            }
+        }
+
+        /// <summary>
+        /// 把当前在播的提示音混进累加器。返回仍在播的数量。
+        /// 音量与静音在这里单独应用——因为 ApplyGain 是在**收包时逐帧**做的，
+        /// 混音器里加进来的音效不走那条路径，必须自己对一下。
+        /// </summary>
+        private int MixChimes(int samples)
+        {
+            lock (_chimeLock)
+            {
+                if (_chimes.Count == 0) return 0;
+
+                int vol = _owner.SpeakerMuted ? 0 : _owner.VolumePercent;
+                if (vol <= 0)
+                {
+                    // 静音时直接丢弃，避免解除静音后突然补放一个迟到的提示音
+                    _chimes.Clear();
+                    return 0;
+                }
+
+                for (int k = _chimes.Count - 1; k >= 0; k--)
+                {
+                    ActiveChime c = _chimes[k];
+                    int remain = c.Samples.Length - c.Pos;
+                    int n = remain < samples ? remain : samples;
+                    for (int i = 0; i < n; i++)
+                        _acc[i] += c.Samples[c.Pos + i] * vol / 100;
+                    c.Pos += n;
+                    if (c.Pos >= c.Samples.Length) _chimes.RemoveAt(k);
+                }
+                return _chimes.Count;
+            }
+        }
 
         public int Fill(byte[] buffer, int offset, int count)
         {
@@ -278,7 +335,10 @@ namespace LanTalk
                 }
             }
 
-            if (alive == 0) { _peak = 0; return 0; }   // 全部无声：交给播放层补静音
+            // 提示音混进来（没人说话时也要能响）
+            int chimeActive = MixChimes(samples);
+
+            if (alive == 0 && chimeActive == 0) { _peak = 0; return 0; }   // 全部无声：交给播放层补静音
 
             int peak = 0;
             for (int i = 0; i < samples; i++)
@@ -423,6 +483,15 @@ namespace LanTalk
         {
             get { return _volumePercent; }
             set { _volumePercent = value < 0 ? 0 : (value > 200 ? 200 : value); }
+        }
+
+        /// <summary>播放一个提示音（进房 / 成员进出）。走混音器，因此受放音音量和静音控制。</summary>
+        public void PlayChime(ChimeKind kind)
+        {
+            Mixer m = _mixer;
+            if (m == null) return;
+            try { m.Enqueue(Chimes.Make(kind, _sampleRate)); }
+            catch { }
         }
 
         public AudioPath(UdpPeer net, VoiceCodec codec, int sampleRate, int frameMs,

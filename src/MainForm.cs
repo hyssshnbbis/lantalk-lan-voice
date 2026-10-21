@@ -1,6 +1,7 @@
 // MainForm.cs —— 图形界面（WinForms，纯代码构建，无设计器文件）
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Net;
@@ -10,73 +11,72 @@ using System.Windows.Forms;
 
 namespace LanTalk
 {
-    internal sealed class MainForm : Form
+    internal sealed partial class MainForm : Form
     {
         private const int Rate = 16000;
         private const int FrameMs = 20;
 
         private readonly Args _args;
 
-        // 通话方式
-        private GroupBox _grpWay;
-        private RadioButton _rdo1v1, _rdoRoom;
+        // 无边框窗口的自绘标题条
+        private TopBar _topBar;
+
+        // 两栏容器
+        private Panel _viewMain, _sidebar, _main;
+        private SettingsPanel _settings;
+        private Label _lblVer;
+
+        // 板块：各自持有并布局自己的控件，本类只摆放和连事件
+        private LocalCard _cardLocal;
+        private WayCard _cardWay;
+        private PeerCard _cardPeer;
+        private RoomCard _cardRoom;
+        private StatusCard _cardStatus;
+        private MeterCard _cardMeter;
+        private DeviceCard _cardDev;
+        private ModeCard _cardMode;
+        private LogCard _cardLog;
+        private ChatCard _cardChat;
+        private MembersCard _cardMembers;
+
+        // 下面全是"别名"：指向板块内部的控件，让既有逻辑可以照旧直接读写。
+        // 本类不再创建、也不再给它们定坐标。
+        private DarkSelect _selMode;
         private Label _lblWayHint;
 
-        // 本机
-        private GroupBox _grpLocal;
-        private Label _lblLocalIp, _lblLocalPort, _lblLocalHint;
-        private ComboBox _cmbLocalIp;
-        private TextBox _txtLocalPort;
-        private Button _btnApply;
+        private DarkSelect _cmbLocalIp;
+        private DarkInput _txtLocalPort;
+        private Label _lblLocalHint;
 
-        // 对方（一对一）
-        private GroupBox _grpPeer;
-        private Label _lblPeerIp, _lblPeerPort, _lblPresence;
-        private TextBox _txtPeerIp, _txtPeerPort;
-        private Button _btnProbe, _btnScan;
+        private DarkInput _txtPeerIp, _txtPeerPort;
+        private Label _lblPresence;
+        private FlatButton _btnProbe, _btnScan;
 
-        // 会议室
-        private GroupBox _grpRoom;
-        private Label _lblRoomPort, _lblRoomState, _lblManual;
-        private TextBox _txtRoomPort, _txtManualIp, _txtManualPort;
-        private Button _btnJoin, _btnLeave, _btnAddManual;
+        private DarkInput _txtRoomPort, _txtManualIp, _txtManualPort;
+        private Label _lblRoomState;
+        private FlatButton _btnJoin, _btnLeave, _btnAddManual;
 
-        // 状态
-        private GroupBox _grpStatus;
         private Label _lblState, _lblPeerState;
-        private Button _btnCall, _btnAnswer, _btnHangup;
+        private FlatButton _btnCall, _btnAnswer;
 
-        // 设备
-        private GroupBox _grpDev;
-        private Label _lblIn, _lblOut, _lblCodec;
-        private ComboBox _cmbIn, _cmbOut, _cmbCodec;
-        private Button _btnRefreshDev, _btnLoopTest, _btnRecordAb;
-        private ComboBox _cmbEngine;
+        private DarkSelect _cmbIn, _cmbOut, _cmbCodec, _cmbEngine;
         private Label _lblRecHint;
         private CheckBox _chkAutoAnswer;
+        private FlatButton _btnLoopTest, _btnRecordAb;
 
-        // 模式与音量
-        private GroupBox _grpMode;
-        private RadioButton _rdoFull, _rdoPtt;
-        private Button _btnPtt;
-        private Label _lblVolume, _lblVolVal;
-        private TrackBar _trkVolume;
+        private OptionRow _rdoFull, _rdoPtt;
+        private FlatButton _btnPtt;
+        private Label _lblVolVal;
+        private DarkSlider _trkVolume;
         private CheckBox _chkSpkMute, _chkMicMute;
-        private Label _lblDenoise;
-        private ComboBox _cmbDenoise;
+        private DarkSelect _cmbDenoise;
 
-        // 电平与统计
-        private GroupBox _grpMeter;
-        private Label _lblInLevel, _lblOutLevel, _lblStats;
-        private ProgressBar _pbIn, _pbOut;
+        private MeterBar _pbIn, _pbOut;
+        private Label _lblStats;
 
-        // 日志与成员
-        private TabControl _tabs;
-        private TabPage _tabLog, _tabMembers;
         private TextBox _txtLog;
         private ListView _lstMembers;
-        private Button _btnMuteMember, _btnRemoveMember;
-        private Label _lblMembersHint;
+        private FlatButton _btnMuteMember, _btnRemoveMember;
 
         private System.Windows.Forms.Timer _tick;
         private UdpPeer _net;
@@ -122,246 +122,190 @@ namespace LanTalk
         private void BuildUi()
         {
             Text = "LanTalk —— 局域网语音通话";
-            Font = new Font("Microsoft YaHei UI", 9F);
-            // 布局尺寸全部按 96 DPI 写，最后统一乘 DPI 系数（见 ApplyDpiScale），
-            // 这样字体（按磅渲染、随 DPI 变大）和控件框始终成比例。
+            Theme.InitFonts();
+            Font = Theme.FontUi;
             AutoScaleMode = AutoScaleMode.None;
-            ClientSize = new Size(790, 784);
-            MinimumSize = new Size(806, 796);
+            // 去掉系统标题栏（那条绿框），改成自绘的窄条
+            FormBorderStyle = FormBorderStyle.None;
+            ClientSize = new Size(1120, 840);
+            MinimumSize = new Size(1120, 840);
+            MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
             KeyPreview = true;
             KeyDown += OnFormKeyDown;
             KeyUp += OnFormKeyUp;
             FormClosing += OnFormClosing;
-            BackColor = SystemColors.Control;
+            BackColor = Theme.MainBg;
+            ForeColor = Theme.TextPrimary;
 
-            // ---- 通话方式 ----
-            _grpWay = NewGroup("通话方式", 8, 8, 774, 52);
-            _rdo1v1 = new RadioButton();
-            _rdo1v1.Text = "一对一通话";
-            _rdo1v1.SetBounds(14, 20, 110, 22);
-            _rdo1v1.Checked = true;
-            _rdo1v1.CheckedChanged += OnWayChanged;
-            _rdoRoom = new RadioButton();
-            _rdoRoom.Text = "多人会议室";
-            _rdoRoom.SetBounds(134, 20, 110, 22);
-            _rdoRoom.CheckedChanged += OnWayChanged;
-            _lblWayHint = NewLabel("", 254, 22, 508);
-            _lblWayHint.ForeColor = Color.DimGray;
-            _grpWay.Controls.AddRange(new Control[] { _rdo1v1, _rdoRoom, _lblWayHint });
+            _topBar = new TopBar();
+            BuildSidebar();
+            BuildMain();
+            BuildSettings();
 
-            // ---- 本机 ----
-            _grpLocal = NewGroup("本机", 8, 68, 774, 58);
-            _lblLocalIp = NewLabel("本机地址", 14, 27, 60);
-            _cmbLocalIp = new ComboBox();
-            _cmbLocalIp.DropDownStyle = ComboBoxStyle.DropDownList;
-            _cmbLocalIp.SetBounds(78, 23, 210, 24);
-            _lblLocalPort = NewLabel("端口", 298, 27, 34);
-            _txtLocalPort = new TextBox();
-            _txtLocalPort.SetBounds(336, 23, 60, 24);
-            _btnApply = NewButton("应用并重启监听", 406, 22, 120, 26);
-            _btnApply.Click += OnApplyClick;
-            _lblLocalHint = NewLabel("", 536, 27, 232);
-            _lblLocalHint.ForeColor = Color.DimGray;
-            _grpLocal.Controls.AddRange(new Control[] { _lblLocalIp, _cmbLocalIp, _lblLocalPort, _txtLocalPort, _btnApply, _lblLocalHint });
+            _viewMain = new Panel();
+            _viewMain.SetBounds(0, TopBar.BarHeight, 1120, 780);
+            _viewMain.BackColor = Theme.MainBg;
+            _viewMain.Controls.AddRange(new Control[] { _sidebar, _main });
 
-            // ---- 对方（一对一） ----
-            _grpPeer = NewGroup("对方", 8, 134, 774, 60);
-            _lblPeerIp = NewLabel("对方 IP", 14, 27, 54);
-            _txtPeerIp = new TextBox();
-            _txtPeerIp.SetBounds(72, 23, 160, 24);
+            Controls.AddRange(new Control[] { _topBar, _viewMain, _settings });
+
+            BindCards();
+            ApplyDpiScale();
+            AcceptButton = null;
+
+            // 默认是多人会议室；但如果启动参数里指定了 --room，或给了 --peer，
+            // 就按参数意图切模式，免得命令行场景被界面默认值带偏。
+            if (_args.Room > 0) _selMode.SelectedIndex = WayCard.IndexRoom;
+            else if (_args.PeerIp != null) _selMode.SelectedIndex = WayCard.IndexP2P;
+
+            LoadChatHistory();
+        }
+
+        // ==================== 侧边栏 ====================
+        private void BuildSidebar()
+        {
+            _sidebar = new Panel();
+            _sidebar.SetBounds(0, 0, 278, 780);
+            _sidebar.BackColor = Theme.SidebarBg;
+
+            _cardLocal = new LocalCard(12, 12);
+            _cardWay = new WayCard(12, 178);
+            _cardPeer = new PeerCard(12, 262);
+            _cardRoom = new RoomCard(12, 262);
+            _cardRoom.Visible = false;
+
+            _cardMembers = new MembersCard(12, 440, 140);
+
+            _cardMeter = new MeterCard(12, 586);
+
+            _lblVer = new Label();
+            _lblVer.Text = "v1.1.0";
+            _lblVer.SetBounds(14, 744, 240, 18);
+            _lblVer.Font = Theme.FontSmall;
+            _lblVer.ForeColor = Theme.TextMuted;
+            _lblVer.BackColor = Color.Transparent;
+
+            _sidebar.Controls.AddRange(new Control[] { _cardLocal, _cardWay, _cardPeer, _cardRoom, _cardMembers, _cardMeter, _lblVer });
+        }
+
+        // ==================== 主区 ====================
+        private void BuildMain()
+        {
+            _main = new Panel();
+            _main.SetBounds(278, 0, 842, 780);
+            _main.BackColor = Theme.MainBg;
+
+            _cardStatus = new StatusCard(12, 12, 818);
+            // 音频设备与通话模式已搬进设置页；这块空间之后给聊天框，先让日志占住
+            _cardChat = new ChatCard(12, 82, 818, 518);
+            _cardLog = new LogCard(12, 612, 818, 156);
+
+            _main.Controls.AddRange(new Control[] { _cardStatus, _cardChat, _cardLog });
+        }
+
+        // ==================== 把板块控件挂到别名 + 连事件 ====================
+        private void BindCards()
+        {
+            // 本机
+            _cmbLocalIp = _cardLocal.Ip;
+            _txtLocalPort = _cardLocal.Port;
+            _lblLocalHint = _cardLocal.Hint;
+            _cardLocal.Apply.Click += OnApplyClick;
+
+            // 连接模式
+            _selMode = _cardWay.Mode;
+            _lblWayHint = _cardWay.Hint;
+            _selMode.SelectedIndexChanged += OnWayChanged;
+
+            // 对方
+            _txtPeerIp = _cardPeer.Ip;
+            _txtPeerPort = _cardPeer.Port;
+            _lblPresence = _cardPeer.Presence;
             _txtPeerIp.Leave += OnPeerTextChanged;
             _txtPeerIp.TextChanged += OnPeerTextChanged;
-            _lblPeerPort = NewLabel("端口", 242, 27, 34);
-            _txtPeerPort = new TextBox();
-            _txtPeerPort.SetBounds(280, 23, 60, 24);
             _txtPeerPort.TextChanged += OnPeerTextChanged;
-            _btnProbe = NewButton("测试连通", 350, 22, 90, 26);
+            _btnProbe = _cardPeer.Probe;
+            _btnScan = _cardPeer.Scan;
             _btnProbe.Click += OnProbeClick;
-            _btnScan = NewButton("搜索局域网", 448, 22, 100, 26);
             _btnScan.Click += OnScanClick;
-            _lblPresence = NewLabel("对方未设置", 558, 27, 210);
-            _grpPeer.Controls.AddRange(new Control[] { _lblPeerIp, _txtPeerIp, _lblPeerPort, _txtPeerPort, _btnProbe, _btnScan, _lblPresence });
 
-            // ---- 会议室（和"对方"同一位置，按模式互相切换显示） ----
-            _grpRoom = NewGroup("会议室", 8, 134, 774, 60);
-            _lblRoomPort = NewLabel("房间号", 14, 27, 54);
-            _txtRoomPort = new TextBox();
-            _txtRoomPort.SetBounds(72, 23, 70, 24);
-            _btnJoin = NewButton("加入会议", 152, 22, 90, 26);
+            // 会议室
+            _txtRoomPort = _cardRoom.Port;
+            _txtManualIp = _cardRoom.ManualIp;
+            _txtManualPort = _cardRoom.ManualPort;
+            _lblRoomState = _cardRoom.State;
+            _btnJoin = _cardRoom.Join;
+            _btnLeave = _cardRoom.LeaveButton;
+            _btnAddManual = _cardRoom.AddManual;
             _btnJoin.Click += OnJoinClick;
-            _btnLeave = NewButton("离开会议", 248, 22, 90, 26);
             _btnLeave.Click += OnLeaveClick;
-            _lblManual = NewLabel("手工补成员", 350, 27, 76);
-            _txtManualIp = new TextBox();
-            _txtManualIp.SetBounds(428, 23, 130, 24);
-            _txtManualPort = new TextBox();
-            _txtManualPort.SetBounds(564, 23, 60, 24);
-            _btnAddManual = NewButton("添加", 630, 22, 60, 26);
             _btnAddManual.Click += OnAddManualClick;
-            _lblRoomState = NewLabel("未加入", 696, 27, 72);
-            _grpRoom.Controls.AddRange(new Control[] { _lblRoomPort, _txtRoomPort, _btnJoin, _btnLeave, _lblManual, _txtManualIp, _txtManualPort, _btnAddManual, _lblRoomState });
-            _grpRoom.Visible = false;
 
-            // ---- 状态 ----
-            _grpStatus = NewGroup("通话", 8, 202, 774, 92);
-            _lblState = new Label();
-            _lblState.SetBounds(18, 18, 380, 36);
-            _lblState.Font = new Font("Microsoft YaHei UI", 16F, FontStyle.Bold);
-            _lblState.Text = "空闲";
-            _lblPeerState = NewLabel("", 20, 56, 380);
-            _lblPeerState.Height = 24;
-            _lblPeerState.ForeColor = Color.DimGray;
-            _btnCall = NewButton("呼叫", 410, 26, 110, 40);
+            // 状态
+            _lblState = _cardStatus.State;
+            _lblPeerState = _cardStatus.PeerState;
+            _btnCall = _cardStatus.Call;
+            _btnAnswer = _cardStatus.Answer;
             _btnCall.Click += OnCallClick;
-            _btnAnswer = NewButton("接听", 530, 26, 110, 40);
             _btnAnswer.Click += OnAnswerClick;
-            _btnHangup = NewButton("挂断", 650, 26, 110, 40);
-            _btnHangup.Click += OnHangupClick;
-            _grpStatus.Controls.AddRange(new Control[] { _lblState, _lblPeerState, _btnCall, _btnAnswer, _btnHangup });
 
-            // ---- 设备 ----
-            _grpDev = NewGroup("音频设备", 8, 302, 774, 114);
-            _lblIn = NewLabel("录音设备", 14, 27, 60);
-            _cmbIn = new ComboBox();
-            _cmbIn.DropDownStyle = ComboBoxStyle.DropDownList;
-            _cmbIn.SetBounds(78, 23, 300, 24);
-            _lblOut = NewLabel("播放设备", 14, 59, 60);
-            _cmbOut = new ComboBox();
-            _cmbOut.DropDownStyle = ComboBoxStyle.DropDownList;
-            _cmbOut.SetBounds(78, 55, 300, 24);
-            _btnRefreshDev = NewButton("刷新设备", 390, 23, 100, 26);
-            _btnRefreshDev.Click += OnRefreshDevClick;
-            _btnLoopTest = NewButton("本机回环测试", 390, 55, 112, 26);
+            // 电平
+            _pbIn = _cardMeter.In;
+            _pbOut = _cardMeter.Out;
+            _lblStats = _cardMeter.Stats;
+
+            // 音频设备
+            _cmbIn = _cardDev.In;
+            _cmbOut = _cardDev.Out;
+            _cmbCodec = _cardDev.Codec;
+            _cmbEngine = _cardDev.Engine;
+            _chkAutoAnswer = _cardDev.AutoAnswer;
+            _lblRecHint = _cardDev.RecHint;
+            _cardDev.Codec.SelectedIndexChanged += OnCodecChanged;
+            _cardDev.Engine.SelectedIndexChanged += OnEngineChanged;
+            _btnLoopTest = _cardDev.LoopTest;
+            _btnRecordAb = _cardDev.RecordAb;
+            _cardDev.RefreshButton.Click += OnRefreshDevClick;
             _btnLoopTest.Click += OnLoopTestClick;
-            _chkAutoAnswer = new CheckBox();
-            _chkAutoAnswer.Text = "自动接听";
-            _chkAutoAnswer.SetBounds(514, 26, 102, 22);
-            _lblCodec = NewLabel("语音编码", 514, 59, 62);
-            _cmbCodec = new ComboBox();
-            _cmbCodec.DropDownStyle = ComboBoxStyle.DropDownList;
-            _cmbCodec.SetBounds(578, 55, 182, 24);
-            _cmbCodec.Items.Add("PCM16 高保真 256k");
-            _cmbCodec.Items.Add("G.711 µ-law 省流量 128k");
-            _cmbCodec.SelectedIndex = 0;
-            _cmbCodec.SelectedIndexChanged += OnCodecChanged;
-            // 降噪引擎选择：直接占用原来「录音对比」的位置。
-            // 不另加标签，让下拉框自己的文字带上「引擎：」前缀，省一行宽度。
-            _cmbEngine = new ComboBox();
-            _cmbEngine.DropDownStyle = ComboBoxStyle.DropDownList;
-            _cmbEngine.SetBounds(620, 24, 140, 24);
-            _cmbEngine.Items.Add("引擎：WebRTC NS");
-            _cmbEngine.Items.Add("引擎：轻量版");
-            _cmbEngine.SelectedIndex = 0;
-            _cmbEngine.SelectedIndexChanged += OnEngineChanged;
-
-            // 「录音对比」挪到新加的第三行
-            _lblRecHint = NewLabel("录 10 秒，两个引擎各出一份 wav + 客观指标，方便自己听感对比", 14, 88, 360);
-            _lblRecHint.ForeColor = Color.FromArgb(90, 90, 90);
-            _btnRecordAb = NewButton("录音对比", 390, 84, 112, 26);
             _btnRecordAb.Click += OnRecordAbClick;
-            _grpDev.Controls.AddRange(new Control[] { _lblIn, _cmbIn, _lblOut, _cmbOut, _btnRefreshDev, _btnLoopTest, _chkAutoAnswer, _lblCodec, _cmbCodec, _cmbEngine, _lblRecHint, _btnRecordAb });
 
-            // ---- 模式与音量 ----
-            _grpMode = NewGroup("通话模式与音量", 8, 424, 774, 92);
-            _rdoFull = new RadioButton();
-            _rdoFull.Text = "全双工（建议戴耳机）";
-            _rdoFull.SetBounds(14, 24, 220, 22);
-            _rdoFull.Checked = true;
+            // 通话模式
+            _rdoFull = _cardMode.Full;
+            _rdoPtt = _cardMode.Ptt;
+            _btnPtt = _cardMode.PttButton;
+            _trkVolume = _cardMode.Volume;
+            _lblVolVal = _cardMode.VolVal;
+            _chkSpkMute = _cardMode.SpkMute;
+            _chkMicMute = _cardMode.MicMute;
+            _cmbDenoise = _cardMode.Denoise;
             _rdoFull.CheckedChanged += OnModeChanged;
-            _rdoPtt = new RadioButton();
-            _rdoPtt.Text = "按键说话（不戴耳机也不啸叫）";
-            _rdoPtt.SetBounds(242, 24, 270, 22);
             _rdoPtt.CheckedChanged += OnModeChanged;
-            _btnPtt = NewButton("按住说话（也可按空格）", 520, 20, 240, 32);
             _btnPtt.MouseDown += OnPttDown;
             _btnPtt.MouseUp += OnPttUp;
             _btnPtt.MouseLeave += OnPttUp;
-            _lblVolume = NewLabel("放音音量", 14, 60, 64);
-            _trkVolume = new TrackBar();
-            _trkVolume.SetBounds(82, 56, 226, 26);
-            _trkVolume.Minimum = 0;
-            _trkVolume.Maximum = 200;
-            _trkVolume.TickFrequency = 20;
-            _trkVolume.Value = 100;
             _trkVolume.ValueChanged += OnVolumeChanged;
-            _lblVolVal = NewLabel("100%", 312, 60, 50);
-            _chkSpkMute = new CheckBox();
-            _chkSpkMute.Text = "静音扬声器";
-            _chkSpkMute.SetBounds(370, 59, 106, 22);
             _chkSpkMute.CheckedChanged += OnMuteChanged;
-            _chkMicMute = new CheckBox();
-            _chkMicMute.Text = "静音话筒";
-            _chkMicMute.SetBounds(484, 59, 98, 22);
             _chkMicMute.CheckedChanged += OnMuteChanged;
-            _lblDenoise = NewLabel("降噪", 590, 60, 36);
-            _cmbDenoise = new ComboBox();
-            _cmbDenoise.DropDownStyle = ComboBoxStyle.DropDownList;
-            _cmbDenoise.SetBounds(628, 56, 132, 24);
-            _cmbDenoise.Items.Add("关闭");
-            _cmbDenoise.Items.Add("弱");
-            _cmbDenoise.Items.Add("中（推荐）");
-            _cmbDenoise.Items.Add("强");
-            _cmbDenoise.SelectedIndex = 2;
             _cmbDenoise.SelectedIndexChanged += OnDenoiseChanged;
-            _grpMode.Controls.AddRange(new Control[] { _rdoFull, _rdoPtt, _btnPtt, _lblVolume, _trkVolume, _lblVolVal, _chkSpkMute, _chkMicMute, _lblDenoise, _cmbDenoise });
 
-            // ---- 电平与统计 ----
-            _grpMeter = NewGroup("电平与统计", 8, 524, 774, 84);
-            _lblInLevel = NewLabel("话筒电平", 14, 26, 64);
-            _pbIn = new ProgressBar();
-            _pbIn.SetBounds(82, 24, 180, 16);
-            _pbIn.Maximum = 100;
-            _lblOutLevel = NewLabel("对方声音", 14, 54, 64);
-            _pbOut = new ProgressBar();
-            _pbOut.SetBounds(82, 52, 180, 16);
-            _pbOut.Maximum = 100;
-            _lblStats = new Label();
-            _lblStats.SetBounds(274, 18, 492, 62);
-            _lblStats.ForeColor = Color.FromArgb(40, 40, 40);
-            _grpMeter.Controls.AddRange(new Control[] { _lblInLevel, _pbIn, _lblOutLevel, _pbOut, _lblStats });
+            // 顶栏胶囊直接驱动既有的复选框/挂断逻辑（只有一套状态）
+            _topBar.Pill.MicToggled += delegate { _chkMicMute.Checked = !_chkMicMute.Checked; };
+            _topBar.Pill.SpeakerToggled += delegate { _chkSpkMute.Checked = !_chkSpkMute.Checked; };
+            _topBar.Pill.HangupClicked += delegate { OnHangupClick(null, EventArgs.Empty); };
+            _topBar.SettingsClicked += delegate { ShowSettings(); };
 
-            // ---- 底部：运行日志 / 会议成员（用标签页，不额外占高度） ----
-            _tabs = new TabControl();
-            _tabs.SetBounds(8, 616, 774, 160);
+            // 日志与成员
+            _cardChat.SendRequested += delegate(string t) { OnChatSend(t); };
 
-            _tabLog = new TabPage("运行日志");
-            _txtLog = new TextBox();
-            _txtLog.SetBounds(12, 16, 744, 112);
-            _txtLog.Multiline = true;
-            _txtLog.ReadOnly = true;
-            _txtLog.ScrollBars = ScrollBars.Vertical;
-            _txtLog.BackColor = Color.FromArgb(250, 250, 250);
-            _txtLog.Font = new Font("Consolas", 8.5F);
-            _tabLog.Controls.Add(_txtLog);
-
-            _tabMembers = new TabPage("会议成员");
-            _lstMembers = new ListView();
-            _lstMembers.SetBounds(12, 16, 560, 112);
-            _lstMembers.View = View.Details;
-            _lstMembers.FullRowSelect = true;
-            _lstMembers.MultiSelect = false;
-            _lstMembers.HideSelection = false;
-            _lstMembers.Columns.Add("成员", 190);
-            _lstMembers.Columns.Add("地址", 170);
-            _lstMembers.Columns.Add("状态", 90);
-            _lstMembers.Columns.Add("收包", 90);
+            _txtLog = _cardLog.Log;
+            _lstMembers = _cardMembers.List;
+            _btnMuteMember = _cardMembers.MuteButton;
+            _btnRemoveMember = _cardMembers.RemoveButton;
             _lstMembers.SelectedIndexChanged += OnMemberSelected;
-            _btnMuteMember = NewButton("静音选中", 584, 16, 90, 30);
             _btnMuteMember.Click += OnMuteMemberClick;
-            _btnRemoveMember = NewButton("移除选中", 584, 54, 90, 30);
             _btnRemoveMember.Click += OnRemoveMemberClick;
-            _lblMembersHint = NewLabel("", 584, 92, 180);
-            _lblMembersHint.ForeColor = Color.DimGray;
-            _tabMembers.Controls.AddRange(new Control[] { _lstMembers, _btnMuteMember, _btnRemoveMember, _lblMembersHint });
-
-            _tabs.TabPages.Add(_tabLog);
-            _tabs.TabPages.Add(_tabMembers);
-
-            Controls.AddRange(new Control[] { _grpWay, _grpLocal, _grpPeer, _grpRoom, _grpStatus, _grpDev, _grpMode, _grpMeter, _tabs });
-
-            ApplyDpiScale();
-            AcceptButton = null;
+            _lstMembers.ForeColor = Theme.TextPrimary;
         }
 
         /// <summary>
@@ -376,7 +320,7 @@ namespace LanTalk
                 using (Graphics g = Graphics.FromHwnd(IntPtr.Zero)) scale = g.DpiX / 96f;
             }
             catch { }
-            if (scale < 1f) scale = 1f;                       // 只放大，不缩小
+            if (scale < 1f) scale = 1f;
             if (Math.Abs(scale - 1f) < 0.02f) return;
 
             ClientSize = new Size(Sc(ClientSize.Width, scale), Sc(ClientSize.Height, scale));
@@ -395,29 +339,42 @@ namespace LanTalk
 
         private static int Sc(int v, float scale) { return (int)Math.Round(v * scale); }
 
-        private GroupBox NewGroup(string text, int x, int y, int w, int h)
+        private void ApplyDarkChrome()
         {
-            GroupBox g = new GroupBox();
-            g.Text = text;
-            g.SetBounds(x, y, w, h);
-            return g;
+            try
+            {
+                DarkChrome.RoundWindowCorners(this);
+                DarkChrome.DarkTitleBar(this);
+                ThemeSweep(this);
+            }
+            catch { }
         }
 
-        private Label NewLabel(string text, int x, int y, int w)
+        /// <summary>
+        /// 把需要深色化的原生控件按类型扫一遍。
+        /// 以前是一个个写死控件名，加个新文本框就得回来改一遍；
+        /// 现在按类型递归处理，新控件自动纳入。
+        /// </summary>
+        private static void ThemeSweep(Control root)
         {
-            Label l = new Label();
-            l.Text = text;
-            l.SetBounds(x, y, w, 20);
-            return l;
-        }
+            foreach (Control c in root.Controls)
+            {
+                TextBox tb = c as TextBox;
+                if (tb != null && tb.Multiline)
+                {
+                    DarkChrome.StripVisualStyles(tb);
+                    DarkChrome.DarkScrollbars(tb);
+                }
 
-        private Button NewButton(string text, int x, int y, int w, int h)
-        {
-            Button b = new Button();
-            b.Text = text;
-            b.SetBounds(x, y, w, h);
-            b.TabStop = false;
-            return b;
+                ListView lv = c as ListView;
+                if (lv != null && !(lv is DarkListView))
+                {
+                    DarkChrome.StripVisualStyles(lv);
+                    DarkChrome.DarkScrollbars(lv);
+                }
+
+                if (c.Controls.Count > 0) ThemeSweep(c);
+            }
         }
 
         private void BindLog()
@@ -438,6 +395,7 @@ namespace LanTalk
             catch { }
             ApplyAppIcon();
         }
+
 
         // WinForms 的 Form.Icon 默认是它自带的那个通用图标，并不会自动用 exe 里的图标，
         // 所以标题栏和任务栏得自己设。这里直接从 exe 自己的图标组里取 16 和 32 两帧：
@@ -479,6 +437,7 @@ namespace LanTalk
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
+            ApplyDarkChrome();
             if (_args.Room > 0)
             {
                 try { AutoJoinRoomIfRequested(); }
@@ -490,7 +449,7 @@ namespace LanTalk
         private void AutoJoinRoomIfRequested()
         {
             if (_args.Room <= 0) return;
-            _rdoRoom.Checked = true;
+            _selMode.SelectedIndex = WayCard.IndexRoom;
             _txtRoomPort.Text = _args.Room.ToString();
             _txtLocalPort.Text = _args.Room.ToString();
             RebuildSession();
@@ -578,7 +537,7 @@ namespace LanTalk
             SelectId(_cmbOut, keepOut);
         }
 
-        private static void SelectId(ComboBox c, int id)
+        private static void SelectId(DarkSelect c, int id)
         {
             for (int i = 0; i < c.Items.Count; i++)
             {
@@ -653,7 +612,7 @@ namespace LanTalk
             {
                 Log.Write("监听端口 " + port + " 失败：" + ex.Message + "（可能被占用，换一个端口试试）");
                 _lblLocalHint.Text = "监听失败";
-                _lblLocalHint.ForeColor = Color.Firebrick;
+                _lblLocalHint.ForeColor = Theme.Danger;
                 return;
             }
 
@@ -663,6 +622,8 @@ namespace LanTalk
             _audio = new AudioPath(_net, SelectedCodec(), Rate, FrameMs, InputFactory(), OutputFactory());
 
             _session = new Session(_net, _audio);
+            _session.MyName = _myName;
+            _session.ChatReceived += OnChatReceived;
             _session.Notice += delegate(string m) { Log.Write(m); };
             _session.StateChanged += OnSessionStateChanged;
             _session.PresencePing = true;
@@ -678,11 +639,12 @@ namespace LanTalk
             SyncDenoiseCombo(_args.EffectiveDenoise());
 
             _conference = new Conference(_net, _audio, _myName);
+            _conference.ChatReceived += OnChatReceived;
             _conference.Notice += delegate(string m) { Log.Write(m); };
             _conference.Changed += OnConferenceChanged;
 
             _lblLocalHint.Text = "监听 " + _net.LocalEndPointText;
-            _lblLocalHint.ForeColor = Color.FromArgb(0, 100, 0);
+            _lblLocalHint.ForeColor = Theme.Accent;
             Log.Write("监听已就绪：" + _net.LocalEndPointText + "（一对一模式下对方要连的就是这个地址）");
             UpdatePeerRemote();
         }
@@ -740,7 +702,7 @@ namespace LanTalk
 
         // ================= 通话方式：一对一 / 会议室 =================
 
-        private bool RoomMode { get { return _rdoRoom != null && _rdoRoom.Checked; } }
+        private bool RoomMode { get { return _selMode != null && _selMode.SelectedIndex == WayCard.IndexRoom; } }
 
         private void OnWayChanged(object sender, EventArgs e)
         {
@@ -751,13 +713,13 @@ namespace LanTalk
         private void ApplyWay(bool log)
         {
             bool room = RoomMode;
-            if (_grpPeer != null) _grpPeer.Visible = !room;
-            if (_grpRoom != null) _grpRoom.Visible = room;
+            if (_cardPeer != null) _cardPeer.Visible = !room;
+            if (_cardRoom != null) _cardRoom.Visible = room;
 
             if (room && _session != null && _session.State != CallState.Idle)
             {
                 Log.Write("会议模式不支持一对一通话，请先挂断。");
-                _rdo1v1.Checked = true;
+                _selMode.SelectedIndex = WayCard.IndexP2P;
                 return;
             }
             if (!room && _conference != null && _conference.Joined)
@@ -766,23 +728,15 @@ namespace LanTalk
                 _conference.Leave();
             }
 
-            if (_tabs != null && _tabMembers != null && _tabLog != null)
-            {
-                _tabs.SelectedTab = room ? _tabMembers : _tabLog;
-            }
             if (_lblWayHint != null)
             {
                 _lblWayHint.Text = room
-                    ? "房间号就是 UDP 端口：填号码点「加入会议」，同网段自动互相发现。"
-                    : "两台电脑之间直接对拨：把对方 IP 填到下面，点「呼叫」。";
+                    ? "房间号就是 UDP 端口：填号码点「加入会议」。"
+                    : "两台电脑直接对拨：填对方 IP，点「呼叫」。";
             }
             if (room && _txtRoomPort != null && _txtRoomPort.Text.Trim().Length == 0 && _txtLocalPort != null)
             {
                 _txtRoomPort.Text = _txtLocalPort.Text.Trim();
-            }
-            if (_lblMembersHint != null)
-            {
-                _lblMembersHint.Text = "静音后他那一路不进混音。";
             }
             if (log) Log.Write(room ? "已切到「多人会议室」。" : "已切到「一对一通话」。");
             RefreshStatus();
@@ -917,8 +871,9 @@ namespace LanTalk
             if (_lblRoomState != null)
             {
                 _lblRoomState.Text = _conference.Joined ? ("会议中 " + _conference.MemberCount + " 人") : "未加入";
-                _lblRoomState.ForeColor = _conference.Joined ? Color.FromArgb(0, 120, 0) : Color.DimGray;
+                _lblRoomState.ForeColor = _conference.Joined ? Theme.Accent : Theme.TextMuted;
             }
+            if (_cardMembers != null) _cardMembers.SetCount(_conference.MemberCount);
             OnMemberSelected(null, EventArgs.Empty);
         }
 
@@ -1092,6 +1047,13 @@ namespace LanTalk
 
         private void OnMuteChanged(object sender, EventArgs e)
         {
+            // 顶栏胶囊与复选框状态双向同步（要在 _session 判空之前，否则空闲时不同步）
+            if (_topBar != null)
+            {
+                _topBar.SetMicMuted(_chkMicMute.Checked);
+                _topBar.SetSpeakerMuted(_chkSpkMute.Checked);
+            }
+
             if (_session == null) return;
             _session.Audio.MicMuted = _chkMicMute.Checked;
             _session.Audio.SpeakerMuted = _chkSpkMute.Checked;
@@ -1344,7 +1306,7 @@ namespace LanTalk
             {
                 bool joined = _conference != null && _conference.Joined;
                 _lblState.Text = joined ? "会议中" : "空闲";
-                _lblState.ForeColor = joined ? Color.FromArgb(0, 120, 0) : Color.FromArgb(40, 90, 170);
+                _lblState.ForeColor = joined ? Theme.Accent : Theme.Info;
 
                 string sub = joined
                     ? ("房间号 " + _conference.RoomPort + "　成员 " + _conference.MemberCount + " 人")
@@ -1354,13 +1316,12 @@ namespace LanTalk
 
                 _btnCall.Enabled = false;
                 _btnAnswer.Enabled = false;
-                _btnHangup.Enabled = false;
                 _btnJoin.Enabled = !joined;
                 _btnLeave.Enabled = joined;
                 _btnAddManual.Enabled = joined;
 
                 _lblPresence.Text = joined ? ("会议中 " + _conference.MemberCount + " 人") : "未加入会议";
-                _lblPresence.ForeColor = joined ? Color.FromArgb(0, 120, 0) : Color.DimGray;
+                _lblPresence.ForeColor = joined ? Theme.Accent : Theme.TextMuted;
                 return;
             }
 
@@ -1371,8 +1332,9 @@ namespace LanTalk
             CallState st = _session.State;
             _lblState.Text = CallStateText.Of(st);
 
-            if (st == CallState.InCall) _lblState.ForeColor = Color.FromArgb(0, 120, 0);
-            else if (st == CallState.Incoming) _lblState.ForeColor = Color.FromArgb(200, 90, 0);
+            if (st == CallState.InCall) _lblState.ForeColor = Theme.Accent;
+            else if (st == CallState.Incoming) _lblState.ForeColor = Theme.Warn;
+            else if (st == CallState.Outgoing) _lblState.ForeColor = Theme.Info;
             else if (st == CallState.Outgoing) _lblState.ForeColor = Color.FromArgb(0, 80, 180);
             else _lblState.ForeColor = Color.FromArgb(70, 70, 70);
 
@@ -1398,9 +1360,13 @@ namespace LanTalk
             }
             _lblPeerState.Text = sub2;
 
-            _btnCall.Enabled = st == CallState.Idle;
-            _btnAnswer.Enabled = st == CallState.Incoming;
-            _btnHangup.Enabled = st != CallState.Idle;
+            // 会议模式下呼叫/接听没有意义，直接隐藏；一对一才显示
+            bool callUi = !RoomMode;
+            _btnCall.Visible = callUi;
+            _btnAnswer.Visible = callUi;
+            _btnCall.Enabled = callUi && st == CallState.Idle;
+            _btnAnswer.Enabled = callUi && st == CallState.Incoming;
+            if (_topBar != null) _topBar.SetHangupEnabled(st != CallState.Idle || RoomMode);
 
             // 对方在线状态
             if (_net == null || _net.Remote == null)
@@ -1445,13 +1411,13 @@ namespace LanTalk
                 downKbps = n.RxBytes * 8.0 / 1000.0 / secs;
             }
 
-            string l1 = "收发：发出 " + n.TxPackets + " 包 / 收到 " + rx + " 包　丢包 " + lost +
-                        "（" + lossPct.ToString("F2") + "%）　乱序 " + n.LatePackets;
-            string l2 = "时延：往返 " + (n.RttMs >= 0 ? n.RttMs.ToString("F2") + " ms" : "—") +
-                        "　抖动缓冲 " + bufMs + " ms" +
-                        "　补静音 " + concealed + " 次";
-            string l3 = "码率：上传 " + upKbps.ToString("F0") + " kbps　下载 " + downKbps.ToString("F0") +
-                        " kbps　编码 " + CodecUtil.Name(_session.Audio.Codec).Split('（')[0];
+            // 侧栏只有 226 宽，统计压成三行短句
+            string l1 = "发 " + Units.Count(n.TxPackets) + " / 收 " + Units.Count(rx) +
+                        "　丢 " + Units.Count(lost) + "（" + lossPct.ToString("F1") + "%）";
+            string l2 = "往返 " + (n.RttMs >= 0 ? n.RttMs.ToString("F1") + " ms" : "—") +
+                        "　抖动 " + bufMs + " ms　补静音 " + concealed;
+            string l3 = "码率 ↑" + upKbps.ToString("F0") + " ↓" + downKbps.ToString("F0") + " kbps　" +
+                        CodecUtil.Name(_session.Audio.Codec).Split('（')[0];
             _lblStats.Text = l1 + Environment.NewLine + l2 + Environment.NewLine + l3;
         }
 

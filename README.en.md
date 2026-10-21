@@ -59,7 +59,7 @@ Download `LanTalk-Setup-*.exe` from the Releases page and run it. It installs pe
 uninstaller, and offers to add a firewall rule (that step is the only one that needs elevation).
 
 ```
-LanTalk-Setup-1.0.0.exe --silent --dir D:\LanTalk --no-firewall --no-launch
+LanTalk-Setup-1.1.0.exe --silent --dir D:\LanTalk --no-firewall --no-launch
 Uninstall.exe --silent
 ```
 
@@ -73,7 +73,7 @@ Requirements: Windows with the in-box .NET Framework 4.0 compiler. Nothing else.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1          # -> dist\LanTalk.exe
-powershell -NoProfile -ExecutionPolicy Bypass -File .\build-setup.ps1    # -> dist\LanTalk-Setup-1.0.0.exe
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build-setup.ps1    # -> dist\LanTalk-Setup-1.1.0.exe
 ```
 
 `build.ps1` invokes `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe` directly.

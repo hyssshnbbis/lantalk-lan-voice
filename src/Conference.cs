@@ -53,6 +53,10 @@ namespace LanTalk
         // 或并发时序把他又加回成员列表（曾经导致退出后对方还挂着人 10 秒）。
         private readonly Dictionary<uint, DateTime> _departed = new Dictionary<uint, DateTime>();
         private const int DepartedGuardMs = 5000;
+        // 刚进房时会把房间里已有的人一次性发现出来，那不是"有人进来"，
+        // 所以进房后这段时间内不发成员加入提示音。
+        private const double JoinChimeSettleSec = 2.5;
+        private DateTime _joinedAt = DateTime.MinValue;
         private readonly object _lock = new object();
 
         private volatile bool _joined;
@@ -62,6 +66,9 @@ namespace LanTalk
 
         public event Action Changed;
         public event Action<string> Notice;
+
+        /// <summary>收到一条聊天消息：(发送者名字, 正文)。</summary>
+        public event Action<string, string> ChatReceived;
 
         public bool Joined { get { return _joined; } }
         public int RoomPort { get { lock (_lock) return _roomPort; } }
@@ -102,6 +109,7 @@ namespace LanTalk
                 if (_joined) return;
                 _joined = true;
                 _roomPort = roomPort;
+                _joinedAt = DateTime.UtcNow;
                 _members.Clear();
                 _departed.Clear();
                 _tickAccumMs = AnnounceMs;   // 让 Tick 立刻广播一次
@@ -109,6 +117,8 @@ namespace LanTalk
             Log("已加入会议室（房间号 " + roomPort + "）。正在广播寻找同伴…");
             Log("房间号就是端口号：同一房间的人请填同一个号码。我的标识 " + MyId.ToString("x8") + "。");
             try { _audio.Start(false); } catch (Exception ex) { Log("打开音频设备失败：" + ex.Message); }
+            _audio.PlayChime(ChimeKind.JoinRoom);
+            Log("提示音：进房");
             RaiseChanged();
         }
 
@@ -221,6 +231,16 @@ namespace LanTalk
 
                 _net.AddPeer(m.EndPoint);
                 _audio.EnsureChannel(m.IdNum, m.EndPoint, m.Name);
+
+                // 提示音放在这里而不是公告分支：新成员可能先被"音频包"发现，
+                // 也可能先被"房间公告"发现，只有挂在真正建成员的这一处才两种都能覆盖，
+                // 且不会因为两条路径都跑而响两次。
+                // 刚进房时会把房间里既有的人一次性发现出来，那不是"有人进来"，要跳过。
+                if ((DateTime.UtcNow - _joinedAt).TotalSeconds > JoinChimeSettleSec)
+                {
+                    _audio.PlayChime(ChimeKind.MemberJoin);
+                    Log("提示音：成员加入");
+                }
                 return m;
             }
         }
@@ -236,6 +256,8 @@ namespace LanTalk
             if (m == null) return;
             _net.RemovePeer(m.EndPoint);
             _audio.RemoveChannel(m.IdNum);
+            _audio.PlayChime(ChimeKind.MemberLeave);
+            Log("提示音：成员离开");
             Log("成员已离开：" + (string.IsNullOrEmpty(m.Name) ? m.Key : m.Name) + (why.Length > 0 ? "（" + why + "）" : ""));
         }
 
@@ -281,6 +303,22 @@ namespace LanTalk
         private void OnControl(Pkt p, byte[] payload, int len, IPEndPoint src)
         {
             if (!_joined) return;
+
+            // 文本消息：同样要求和公告一样"已加入"，但不需要房间号校验
+            // （只发给已认识的成员，走单播而不是广播）
+            if (p == Pkt.Chat)
+            {
+                uint chatId;
+                string chatName, chatText;
+                if (!ChatWire.Parse(payload, len, out chatId, out chatName, out chatText)) return;
+                if (chatId == MyId) return;
+                if (string.IsNullOrEmpty(chatText)) return;
+                if (string.IsNullOrEmpty(chatName)) chatName = src.Address.ToString();
+                Log("聊天 " + chatName + "：" + chatText);
+                RaiseChat(chatName, chatText);
+                return;
+            }
+
             if (p == Pkt.RoomHello || p == Pkt.RoomHere || p == Pkt.RoomBye)
             {
                 int port;
@@ -485,6 +523,28 @@ namespace LanTalk
             idNum = (uint)(payload[2] | (payload[3] << 8) | (payload[4] << 16) | (payload[5] << 24));
             if (len > RoomHeaderLen) name = Encoding.UTF8.GetString(payload, RoomHeaderLen, len - RoomHeaderLen);
             return true;
+        }
+
+        /// <summary>把一条文本消息发给房间里所有已认识的成员（单播，不广播）。</summary>
+        public bool SendChat(string text)
+        {
+            if (!_joined || string.IsNullOrEmpty(text)) return false;
+            byte[] p = ChatWire.Build(MyId, _myName, text);
+            IPEndPoint[] peers = _net.Peers;
+            bool any = false;
+            for (int i = 0; i < peers.Length; i++)
+            {
+                try { _net.SendControl(Pkt.Chat, p, p.Length, peers[i]); any = true; }
+                catch { }
+            }
+            return any;
+        }
+
+        private void RaiseChat(string who, string text)
+        {
+            Action<string, string> h = ChatReceived;
+            if (h == null) return;
+            try { h(who, text); } catch { }
         }
 
         public void Dispose()

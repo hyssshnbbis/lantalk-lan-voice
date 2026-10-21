@@ -33,6 +33,9 @@ namespace LanTalk
 
     internal static class SelfTest
     {
+        /// <summary>自检专用的房间号/端口，避开默认的 47800，免得打扰真人通话。</summary>
+        internal const int TestRoomPort = 30900;
+
         private const int Rate = 16000;
         private const int FrameMs = 20;
         private const int SamplesPerFrame = Rate * FrameMs / 1000;
@@ -53,6 +56,8 @@ namespace LanTalk
             TestNsCore();
             TestNsDenoise();
             TestDenoiseCompare();
+            TestChime();
+            TestChatWire();
             TestRoomProtocol();
             TestUdpProtocol();
             TestCodecPathPattern();
@@ -290,6 +295,53 @@ namespace LanTalk
         }
 
         // ---------- 3c. 会议室协议：互相发现 / 离开 ----------
+        /// <summary>聊天报文编解码：往返一致、超长截断、坏包不崩。</summary>
+        private static void TestChatWire()
+        {
+            List<string> bad = new List<string>();
+
+            uint id;
+            string who, text;
+
+            // 1) 普通往返
+            byte[] p = ChatWire.Build(0xDEADBEEF, "成员甲", "你好，听得见吗？");
+            bool ok = ChatWire.Parse(p, p.Length, out id, out who, out text);
+            if (!ok) bad.Add("往返解析失败");
+            if (id != 0xDEADBEEFu) bad.Add("实例ID 不一致：" + id.ToString("x8"));
+            if (who != "成员甲") bad.Add("名字不一致：" + who);
+            if (text != "你好，听得见吗？") bad.Add("正文不一致：" + text);
+
+            // 2) 空名字 / 空正文
+            byte[] p2 = ChatWire.Build(1, "", "");
+            ChatWire.Parse(p2, p2.Length, out id, out who, out text);
+            if (who != "" || text != "") bad.Add("空字段没解析成空串");
+
+            // 3) 超长正文按 UTF-8 字节截断，且不切坏字符
+            string big = new string('测', 400);   // 每个字 3 字节 = 1200 字节，超过 700
+            byte[] p3 = ChatWire.Build(2, "乙", big);
+            ChatWire.Parse(p3, p3.Length, out id, out who, out text);
+            int bytes = System.Text.Encoding.UTF8.GetByteCount(text);
+            if (bytes > ChatWire.MaxTextBytes) bad.Add("截断后仍超限：" + bytes);
+            if (text.Length != big.Length ? (text.Length == 0 || big.Substring(0, text.Length) != text) : false)
+                bad.Add("截断不是从开头连续截的");
+            if (text.Length > 0 && Encoding.UTF8.GetByteCount(text) != text.Length * 3)
+                bad.Add("截断切坏了多字节字符");
+
+            // 4) 坏包必须安全返回 false，不能抛
+            if (ChatWire.Parse(null, 0, out id, out who, out text)) bad.Add("null 应当返回 false");
+            byte[] junk = new byte[] { 1, 2, 3 };
+            if (ChatWire.Parse(junk, junk.Length, out id, out who, out text)) bad.Add("过短包应当返回 false");
+            byte[] lying = new byte[] { 1, 0, 0, 0, 200, 65 };
+            if (ChatWire.Parse(lying, lying.Length, out id, out who, out text)) bad.Add("名字长度越界应当返回 false");
+
+            if (bad.Count == 0)
+                T.Ok("chat_wire", "往返一致；空字段安全；超长按 UTF-8 截断到 " + p3.Length +
+                       " 字节（正文 " + bytes + " 字节，上限 " + ChatWire.MaxTextBytes +
+                       "）且不切坏字符；坏包返回 false 不抛异常");
+            else
+                T.Bad("chat_wire", string.Join("；", bad.ToArray()));
+        }
+
         private static void TestRoomProtocol()
         {
             UdpPeer netA = new UdpPeer();
@@ -315,8 +367,10 @@ namespace LanTalk
 
                 // 同一台机器上没法绑同一个端口，所以这里走"手工补成员"的路径：
                 // 只在 A 一侧填 B，A 的公告会让 B 反过来认识 A（单向填写即可双向组网）
-                cA.Join(47800);
-                cB.Join(47800);
+                // 用测试专用房间号，绝不能是默认的 47800：
+                // 那会把公告发进真人正在用的房间，给对方塞一个幽灵成员。
+                cA.Join(TestRoomPort);
+                cB.Join(TestRoomPort);
                 cA.AddManualPeer("127.0.0.1", netB.LocalPort);
 
                 DateTime deadline = DateTime.UtcNow.AddSeconds(6);
@@ -341,6 +395,34 @@ namespace LanTalk
                 // 音频通道也要跟着建起来
                 bool chanOk = apA.FindChannel(netB.InstanceId) != null;
 
+                // ------------- 聊天端到端：A 发一条，B 必须收到 -------------
+                string gotWho = null, gotText = null;
+                cB.ChatReceived += delegate(string w, string t) { gotWho = w; gotText = t; };
+                string sent = "测试消息 chat-e2e OK";
+                bool sendOk = cA.SendChat(sent);
+                deadline = DateTime.UtcNow.AddSeconds(3);
+                while (DateTime.UtcNow < deadline && gotText == null)
+                {
+                    cA.Tick();
+                    cB.Tick();
+                    Thread.Sleep(50);
+                }
+                bool chatOk = sendOk && gotText == sent && gotWho == "甲";
+
+                // 反向再验一次：B 发给 A
+                string gotText2 = null, gotWho2 = null;
+                cA.ChatReceived += delegate(string w, string t) { gotWho2 = w; gotText2 = t; };
+                string sent2 = "回你一条";
+                bool sendOk2 = cB.SendChat(sent2);
+                deadline = DateTime.UtcNow.AddSeconds(3);
+                while (DateTime.UtcNow < deadline && gotText2 == null)
+                {
+                    cA.Tick();
+                    cB.Tick();
+                    Thread.Sleep(50);
+                }
+                bool chatOk2 = sendOk2 && gotText2 == sent2 && gotWho2 == "乙";
+
                 // 离开：B 应立刻把 A 摘掉
                 cA.Leave();
                 deadline = DateTime.UtcNow.AddSeconds(4);
@@ -363,6 +445,11 @@ namespace LanTalk
                 if (aMembers == 1 && bMembers == 1 && nameOk && nameOk2 && chanOk && bAfterLeave == 0 && bPeersAfter == 0)
                     T.Ok("room_protocol", detail);
                 else T.Bad("room_protocol", detail);
+
+                string chatDetail = "甲→乙=" + chatOk + "（收到 " + gotWho + "：" + gotText + "）；" +
+                                    "乙→甲=" + chatOk2 + "（收到 " + gotWho2 + "：" + gotText2 + "）";
+                if (chatOk && chatOk2) T.Ok("chat_e2e", chatDetail);
+                else T.Bad("chat_e2e", chatDetail);
             }
             catch (Exception ex)
             {
@@ -581,6 +668,71 @@ namespace LanTalk
             finally
             {
                 try { if (Directory.Exists(tmp)) Directory.Delete(tmp, true); } catch { }
+            }
+        }
+
+        // ---------- 3h. 提示音（进房 / 成员进出）----------
+        private static void TestChime()
+        {
+            try
+            {
+                int rate = Rate;
+                ChimeKind[] kinds = { ChimeKind.JoinRoom, ChimeKind.MemberJoin, ChimeKind.MemberLeave };
+                string[] names = { "进房", "成员加入", "成员离开" };
+                int[] expectMs = { 270, 140, 230 };
+
+                StringBuilder sb = new StringBuilder();
+                int peakJoin = 0, peakLeave = 0;
+                bool ok = true;
+
+                for (int k = 0; k < kinds.Length; k++)
+                {
+                    short[] s = Chimes.Make(kinds[k], rate);
+                    int peak = 0;
+                    int firstAbs = 0, lastAbs = 0;
+                    for (int i = 0; i < s.Length; i++)
+                    {
+                        int a = Math.Abs(s[i]);
+                        if (a > peak) peak = a;
+                    }
+                    if (s.Length > 0) { firstAbs = Math.Abs(s[0]); lastAbs = Math.Abs(s[s.Length - 1]); }
+
+                    int ms = s.Length * 1000 / rate;
+                    sb.Append(names[k] + " " + ms + "ms 峰值" + peak + "；");
+
+                    // 时长要接近设计值（±25ms）
+                    if (Math.Abs(ms - expectMs[k]) > 25) ok = false;
+                    // 峰值要在"听得见但不削波"的区间
+                    if (peak < 1500 || peak > 20000) ok = false;
+                    // 首尾必须接近 0，否则会有"咔"的爆音
+                    if (firstAbs > 200 || lastAbs > 200) ok = false;
+
+                    if (k == 0) peakJoin = peak;
+                    if (k == 2) peakLeave = peak;
+                }
+
+                // 进房音应该比成员离开音更醒目
+                bool orderOk = peakJoin > peakLeave;
+
+                // 没有混音器时调用不应抛异常
+                bool safeOk = true;
+                try
+                {
+                    UdpPeer n = new UdpPeer();
+                    AudioPath ap = new AudioPath(n, VoiceCodec.Pcm16, rate, FrameMs,
+                        delegate() { return new ToneSource(rate, FrameMs); },
+                        delegate() { return new NullSink(rate, FrameMs); });
+                    ap.PlayChime(ChimeKind.JoinRoom);   // 未 Start，mixer 为 null，应当静默返回
+                }
+                catch { safeOk = false; }
+
+                string detail = sb.ToString() + "进房音比离开音响=" + orderOk + "，未启动时调用安全=" + safeOk;
+                if (ok && orderOk && safeOk) T.Ok("chime", detail);
+                else T.Bad("chime", detail);
+            }
+            catch (Exception ex)
+            {
+                T.Bad("chime", "异常：" + ex.Message);
             }
         }
 
@@ -1328,7 +1480,7 @@ namespace LanTalk
             string s = spec.Trim();
             int c = s.LastIndexOf(':');
             string ip = s;
-            int port = 47800;
+            int port = SelfTest.TestRoomPort;
             if (c > 0)
             {
                 ip = s.Substring(0, c);

@@ -59,6 +59,21 @@ namespace LanTalk
         public event Action StateChanged;
         public event Action<string> Notice;
 
+        /// <summary>收到一条聊天消息：(发送者名字, 正文)。</summary>
+        public event Action<string, string> ChatReceived;
+
+        /// <summary>本机在对端屏幕上显示的名字（默认用机器名）。</summary>
+        public string MyName = Environment.MachineName;
+
+        /// <summary>把一条文本消息发给当前对端。</summary>
+        public bool SendChat(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            byte[] p = ChatWire.Build(_net.InstanceId, MyName, text);
+            try { _net.SendControl(Pkt.Chat, p, p.Length); return true; }
+            catch { return false; }
+        }
+
         public CallState State { get { lock (_lock) return _state; } }
         public bool PeerRinging { get { lock (_lock) return _peerRinging; } }
         public bool PeerTalking { get { lock (_lock) return _peerTalking; } }
@@ -270,6 +285,19 @@ namespace LanTalk
                         SetState(CallState.Idle);
                     }
                     break;
+
+                case Pkt.Chat:
+                    {
+                        uint cid;
+                        string cname, ctext;
+                        if (!ChatWire.Parse(payload, len, out cid, out cname, out ctext)) break;
+                        if (string.IsNullOrEmpty(ctext)) break;
+                        if (string.IsNullOrEmpty(cname)) cname = "对方";
+                        Log("聊天 " + cname + "：" + ctext);
+                        Action<string, string> ch = ChatReceived;
+                        if (ch != null) { try { ch(cname, ctext); } catch { } }
+                        break;
+                    }
 
                 case Pkt.TalkState:
                     lock (_lock) _peerTalking = len > 0 && payload[0] != 0;
