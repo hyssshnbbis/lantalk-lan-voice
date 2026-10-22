@@ -61,6 +61,7 @@ namespace LanTalk
             TestImageWire();
             TestImageE2E();
             TestImageP2P();
+            TestAvatarCache();
             TestSelfUpdate();
             TestRoomProtocol();
             TestUdpProtocol();
@@ -299,6 +300,110 @@ namespace LanTalk
         }
 
         // ---------- 3c. 会议室协议：互相发现 / 离开 ----------
+        /// <summary>对端缓存：同一个人的头像，第二次进房不应该再传一遍。</summary>
+        private static void TestAvatarCache()
+        {
+            List<string> bad = new List<string>();
+            string tmp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lntpeers-" + Guid.NewGuid().ToString("N").Substring(0, 6));
+            PeerStore.DirOverride = tmp;
+            PeerStore.Reset();
+
+            byte[] jpeg = new byte[3000];
+            for (int i = 0; i < jpeg.Length; i++) jpeg[i] = (byte)((i * 13 + 5) & 0xFF);
+            int wantHash = jpeg.Length ^ (jpeg[0] << 8);
+
+            byte[] idA = new byte[16], idB = new byte[16];
+            for (int i = 0; i < 16; i++) { idA[i] = (byte)(0xA0 + i); idB[i] = (byte)(0xB0 + i); }
+            string keyA = PeerStore.KeyOf(idA);
+
+            try
+            {
+                // ---------- 第 1 轮：B 没有 A 的头像，应该去要 ----------
+                long round1 = RunAvatarRound(idA, idB, jpeg, true, bad, "第1轮", true);
+                if (round1 <= 0) bad.Add("第1轮 A 竟没发出任何头像分片（请求链路没通）");
+                if (!PeerStore.HasAvatar(keyA, wantHash)) bad.Add("第1轮结束后缓存里没有 A 的头像");
+
+                // 模拟重启：清内存状态，从磁盘重新加载
+                PeerStore.Reset();
+                if (!PeerStore.HasAvatar(keyA, wantHash)) bad.Add("重启后从磁盘读不回 A 的头像");
+
+                // ---------- 第 2 轮：缓存命中，必须一个分片都不传 ----------
+                long round2 = RunAvatarRound(idA, idB, jpeg, true, bad, "第2轮", false);
+                if (round2 != 0) bad.Add("第2轮又传了 " + round2 + " 个分片（没有命中缓存）");
+            }
+            catch (Exception ex) { bad.Add("异常：" + ex.Message); }
+            finally
+            {
+                PeerStore.DirOverride = null;
+                PeerStore.Reset();
+                try { Directory.Delete(tmp, true); } catch { }
+            }
+
+            if (bad.Count == 0)
+                T.Ok("avatar_cache", "第1轮 A 发出头像分片并落盘；模拟重启后仍命中；第2轮传输分片数为 0");
+            else
+                T.Bad("avatar_cache", string.Join("；", bad.ToArray()));
+        }
+
+        /// <summary>跑一轮"两人进房并等对方头像"，返回 A 这一轮发出的头像分片数。</summary>
+        private static long RunAvatarRound(byte[] idA, byte[] idB, byte[] jpeg, bool aHasAvatar, List<string> bad, string tag, bool expectReceive)
+        {
+            UdpPeer netA = new UdpPeer();
+            UdpPeer netB = new UdpPeer();
+            AudioPath apA = null, apB = null;
+            Conference cA = null, cB = null;
+            try
+            {
+                netA.Start("127.0.0.1", 0);
+                netB.Start("127.0.0.1", 0);
+                apA = new AudioPath(netA, VoiceCodec.Pcm16, Rate, FrameMs,
+                    delegate() { return new ToneSource(Rate, FrameMs); },
+                    delegate() { return new NullSink(Rate, FrameMs); });
+                apB = new AudioPath(netB, VoiceCodec.Pcm16, Rate, FrameMs,
+                    delegate() { return new ToneSource(Rate, FrameMs); },
+                    delegate() { return new NullSink(Rate, FrameMs); });
+
+                cA = new Conference(netA, apA, "甲");
+                cB = new Conference(netB, apB, "乙");
+                cA.ClientIdOverride = idA;
+                cB.ClientIdOverride = idB;
+                cA.AvatarChunksSent = 0;
+
+                // 头像必须在 Join 之前设好，公告里才会带上 hash
+                if (aHasAvatar) cA.SetAvatar(jpeg);
+
+                cA.Join(TestRoomPort);
+                cB.Join(TestRoomPort);
+                cA.AddManualPeer("127.0.0.1", netB.LocalPort);
+
+                DateTime deadline = DateTime.UtcNow.AddSeconds(6);
+                bool got = false;
+                cB.AvatarChanged += delegate(string who, byte[] d) { got = true; };
+                while (DateTime.UtcNow < deadline)
+                {
+                    cA.Tick(); cB.Tick();
+                    if (got && cA.MemberCount >= 1) break;
+                    Thread.Sleep(30);
+                }
+                // 多跑一会儿，确保"该传的都传完了"
+                DateTime settle = DateTime.UtcNow.AddMilliseconds(1200);
+                while (DateTime.UtcNow < settle) { cA.Tick(); cB.Tick(); Thread.Sleep(30); }
+
+                // 该收到却没收到、或不该收到却收到了，都算失败
+                if (aHasAvatar && expectReceive && !got) bad.Add(tag + "：B 应该收到 A 的头像，但没收到");
+                if (aHasAvatar && !expectReceive && got) bad.Add(tag + "：缓存已命中却又收了一次（白传了）");
+                return cA.AvatarChunksSent;
+            }
+            finally
+            {
+                try { if (cA != null) cA.Dispose(); } catch { }
+                try { if (cB != null) cB.Dispose(); } catch { }
+                try { if (apA != null) apA.Dispose(); } catch { }
+                try { if (apB != null) apB.Dispose(); } catch { }
+                try { if (netA != null) netA.Dispose(); } catch { }
+                try { if (netB != null) netB.Dispose(); } catch { }
+            }
+        }
         /// <summary>一对一的图片路径：走 Session.SendImage，必须也逐字节送达。</summary>
         private static void TestImageP2P()
         {

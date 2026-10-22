@@ -37,8 +37,21 @@ namespace LanTalk
             new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
         private static bool _loaded;
 
-        public static string Dir { get { return Path.Combine(Profile.Dir, "peers"); } }
-        public static string IndexPath { get { return Path.Combine(Profile.Dir, "peers.txt"); } }
+        /// <summary>测试用：把落盘位置指到临时目录，避免污染真实数据。</summary>
+        internal static string DirOverride;
+
+        public static string RootDir { get { return string.IsNullOrEmpty(DirOverride) ? Profile.Dir : DirOverride; } }
+
+        public static string Dir { get { return Path.Combine(RootDir, "peers"); } }
+        public static string IndexPath { get { return Path.Combine(RootDir, "peers.txt"); } }
+
+        /// <summary>测试用：清空内存状态，模拟进程重启。</summary>
+        internal static void Reset()
+        {
+            _map.Clear();
+            _img.Clear();
+            _loaded = false;
+        }
 
         public static string KeyOf(byte[] clientId)
         {
@@ -81,7 +94,7 @@ namespace LanTalk
         {
             try
             {
-                Directory.CreateDirectory(Profile.Dir);
+                Directory.CreateDirectory(RootDir);
                 StringBuilder sb = new StringBuilder();
                 foreach (Entry e in _map.Values)
                     sb.AppendLine(e.ClientId + "|" + e.Name + "|" + e.AvatarHash + "|" + e.LastSeen.Ticks);

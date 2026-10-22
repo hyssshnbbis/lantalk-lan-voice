@@ -64,6 +64,12 @@ namespace LanTalk
         private readonly ImageAssembler _avatarAsm = new ImageAssembler();
         private uint _avatarSeq;
         private byte[] _myAvatar;
+
+        /// <summary>测试用：覆盖上报的 ClientId。为 null 时用 Profile.ClientIdBytes。</summary>
+        internal byte[] ClientIdOverride;
+
+        /// <summary>已经发出过多少个头像分片（自检用它断言"没有重传"）。</summary>
+        public long AvatarChunksSent;
         private uint _imgSeq;
 
         private volatile bool _joined;
@@ -582,7 +588,7 @@ namespace LanTalk
             p[4] = (byte)((id >> 16) & 0xFF);
             p[5] = (byte)((id >> 24) & 0xFF);
             // ClientId + 头像 hash：同一个人换台机器/换个端口也认得出来
-            byte[] cid = Profile.ClientIdBytes;
+            byte[] cid = ClientIdOverride != null ? ClientIdOverride : Profile.ClientIdBytes;
             Buffer.BlockCopy(cid, 0, p, 6, 16);
             int ah = 0;
             if (_myAvatar != null && _myAvatar.Length > 0) ah = _myAvatar.Length ^ (_myAvatar[0] << 8);
@@ -687,7 +693,7 @@ namespace LanTalk
                 int off = ci * ImageWire.ChunkPayload;
                 int len = Math.Min(ImageWire.ChunkPayload, blob.Length - off);
                 byte[] chunk = ImageWire.BuildChunk(msgId, ci, total, blob, off, len);
-                try { _net.SendControl(Pkt.Avatar, chunk, chunk.Length, peer); } catch { return; }
+                try { _net.SendControl(Pkt.Avatar, chunk, chunk.Length, peer); AvatarChunksSent++; } catch { return; }
             }
             Log("按请求发出头像：" + (_myAvatar.Length / 1024) + " KB，切成 " + total + " 片");
         }
