@@ -14,7 +14,7 @@
 # 否则打进去的是 dist 里上一次的 exe。
 
 param(
-    [string]$Version = '1.3.1',
+    [string]$Version = '1.3.2',
     [switch]$Check
 )
 

@@ -1,7 +1,7 @@
 ﻿<#
     build-setup.ps1 —— 编译安装程序（单文件安装 exe）
     先调 build.ps1 编译出 dist\LanTalk.exe，再把它和 README、防火墙脚本一起作为
-    内嵌资源打进安装程序，最后产出 dist\LanTalk-Setup-1.3.1.exe。
+    内嵌资源打进安装程序，最后产出 dist\LanTalk-Setup-1.3.2.exe。
 
     同样只用 Windows 自带的 csc.exe，不需要联网、不需要任何安装器制作工具（Inno/NSIS 都不需要）。
 
@@ -10,7 +10,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Version = '1.3.1'
+    [string]$Version = '1.3.2'
 )
 
 $ErrorActionPreference = 'Stop'

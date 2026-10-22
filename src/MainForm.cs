@@ -183,7 +183,7 @@ namespace LanTalk
             _cardMeter = new MeterCard(12, 604);
 
             _lblVer = new Label();
-            _lblVer.Text = "v1.3.1";
+            _lblVer.Text = "v1.3.2";
             _lblVer.SetBounds(14, 738, 240, 18);
             _lblVer.Font = Theme.FontSmall;
             _lblVer.ForeColor = Theme.TextMuted;
