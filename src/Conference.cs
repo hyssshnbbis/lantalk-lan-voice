@@ -17,6 +17,8 @@ namespace LanTalk
 {
     internal sealed class Member
     {
+        /// <summary>对方持久身份（16 字节十六进制）。缓存头像要用它做键。</summary>
+        public string ClientId = "";
         /// <summary>发送者标识：和语音包头里的 ID 一致，用于把声音归到人。</summary>
         public uint IdNum;
         public string Name = "";
@@ -315,6 +317,13 @@ namespace LanTalk
         {
             if (!_joined) return;
 
+            // 对方缺头像，请求我们发一份（空载荷）
+            if (p == Pkt.AvatarWant)
+            {
+                SendAvatarTo(src);
+                return;
+            }
+
             // 头像：载荷重组后是 [实例ID 4][jpeg]，按 ID 找到成员再抛事件
             if (p == Pkt.Avatar)
             {
@@ -326,6 +335,13 @@ namespace LanTalk
                     byte[] jpeg = new byte[blob.Length - 4];
                     Buffer.BlockCopy(blob, 4, jpeg, 0, jpeg.Length);
                     Member m = FindById(who);
+                    if (m == null) return;
+                    if (!string.IsNullOrEmpty(m.ClientId))
+                    {
+                        int ah = jpeg.Length ^ (jpeg.Length > 0 ? (jpeg[0] << 8) : 0);
+                        PeerStore.SaveAvatar(m.ClientId, jpeg, ah);
+                        PeerStore.Prune();
+                    }
                     if (m == null) return;
                     Log("收到头像：" + ((string.IsNullOrEmpty(m.Name) ? m.Key : m.Name)) + "  " + (jpeg.Length / 1024) + " KB");
                     Action<string, byte[]> h = AvatarChanged;
@@ -395,6 +411,16 @@ namespace LanTalk
 
                 bool isNew = FindById(idNum) == null;
                 Member m = AddOrUpdate(src, idNum, name);
+                    if (m != null)
+                    {
+                        m.ClientId = PeerStore.KeyOf(lastClientId);
+                        PeerStore.Touch(m.ClientId, name, lastAvatarHash);
+                        // 手里没有他当前这一版头像，才去要一份；有就一个字节都不传。
+                        if (lastAvatarHash != 0 && !PeerStore.HasAvatar(m.ClientId, lastAvatarHash))
+                        {
+                            try { _net.SendControl(Pkt.AvatarWant, null, 0, src); } catch { }
+                        }
+                    }
                 if (m != null && isNew)
                 {
                     Log("成员加入：" + (string.IsNullOrEmpty(name) ? src.ToString() : name) + "  " + src);
@@ -639,7 +665,31 @@ namespace LanTalk
         public void SetAvatar(byte[] jpeg)
         {
             _myAvatar = jpeg;
-            if (_joined) SendAvatarToAll();
+            // 不再主动广播：对方发现自己没有这个 hash 时会来要。
+            // 下次 Announce 里带的 hash 变化会让对方重新要一次。
+        }
+
+        /// <summary>只发给某一个对端（对方要了才发）。</summary>
+        private void SendAvatarTo(IPEndPoint peer)
+        {
+            if (!_joined || peer == null || _myAvatar == null || _myAvatar.Length == 0) return;
+
+            byte[] blob = new byte[4 + _myAvatar.Length];
+            uint id = MyId;
+            blob[0] = (byte)(id & 0xFF); blob[1] = (byte)((id >> 8) & 0xFF);
+            blob[2] = (byte)((id >> 16) & 0xFF); blob[3] = (byte)((id >> 24) & 0xFF);
+            Buffer.BlockCopy(_myAvatar, 0, blob, 4, _myAvatar.Length);
+
+            uint msgId = ((uint)(MyId & 0x7FFF) << 16) | (uint)((++_avatarSeq) & 0xFFFF) | 0x80000000u;
+            int total = ImageWire.ChunkCount(blob.Length);
+            for (int ci = 0; ci < total; ci++)
+            {
+                int off = ci * ImageWire.ChunkPayload;
+                int len = Math.Min(ImageWire.ChunkPayload, blob.Length - off);
+                byte[] chunk = ImageWire.BuildChunk(msgId, ci, total, blob, off, len);
+                try { _net.SendControl(Pkt.Avatar, chunk, chunk.Length, peer); } catch { return; }
+            }
+            Log("按请求发出头像：" + (_myAvatar.Length / 1024) + " KB，切成 " + total + " 片");
         }
 
         /// <summary>把当前头像发给所有已知成员。</summary>

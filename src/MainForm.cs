@@ -183,7 +183,7 @@ namespace LanTalk
             _cardMeter = new MeterCard(12, 604);
 
             _lblVer = new Label();
-            _lblVer.Text = "v1.3.0";
+            _lblVer.Text = "v1.3.1";
             _lblVer.SetBounds(14, 738, 240, 18);
             _lblVer.Font = Theme.FontSmall;
             _lblVer.ForeColor = Theme.TextMuted;
@@ -867,6 +867,12 @@ namespace LanTalk
                     it.SubItems.Add(m.Muted ? "已静音" : (lvl >= 8 ? "正在说话" : "在线"));
                     it.SubItems.Add(m.Received.ToString());
                     it.Tag = m.Key;
+                    // 先用缓存里的头像顶上，真图到了再替换（省一次传输）
+                    if (!string.IsNullOrEmpty(m.ClientId) && !_cardMembers.List.Avatars.ContainsKey(m.Key))
+                    {
+                        Image cached = PeerStore.GetAvatar(m.ClientId);
+                        if (cached != null) _cardMembers.List.Avatars[m.Key] = cached;
+                    }
                     if (m.Muted) it.ForeColor = Color.Gray;
                     else if (lvl >= 8) it.ForeColor = Color.FromArgb(0, 120, 0);
                     _lstMembers.Items.Add(it);
