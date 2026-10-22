@@ -1562,20 +1562,40 @@ namespace LanTalk
                     delegate() { return new NullSink(Rate, FrameMs); });
 
                 long total = 0, match = 0, frames = 0;
+                long n0 = -1;   // seq=0 帧第一个样本对应的音源样本号（相位标定）
                 string probe = "";
                 ap.FrameDecoded += delegate(long seq, byte[] pcm, int len)
                 {
                     frames++;
+
+                    // 音源读游标可能比 seq 编号领先若干个整帧（启动预热帧被消费掉但没进编号流）。
+                    // 这不影响音频正确性，只影响"绝对索引"这个假设，所以先标定相位再逐样本比对。
+                    if (n0 < 0)
+                    {
+                        short a0 = (short)(pcm[0] | (pcm[1] << 8));
+                        for (int c = 0; c < SamplesPerFrame * 16; c++)
+                        {
+                            if (ToneSource.SampleAt(c) != a0) continue;
+                            bool same = true;
+                            for (int k = 0; k < 8 && (k * 2 + 1) < len; k++)
+                            {
+                                if (ToneSource.SampleAt(c + k) != (short)(pcm[k * 2] | (pcm[k * 2 + 1] << 8))) { same = false; break; }
+                            }
+                            if (same) { n0 = c; break; }
+                        }
+                        if (n0 < 0) n0 = 0;
+                        probe = "相位偏移=" + n0 + " 样本（" + (n0 / SamplesPerFrame) + " 帧）";
+                    }
                     for (int i = 0; i + 1 < len; i += 2)
                     {
-                        short expect = ToneSource.SampleAt(seq * SamplesPerFrame + (i / 2));
+                        short expect = ToneSource.SampleAt(n0 + seq * SamplesPerFrame + (i / 2));
                         short act = (short)(pcm[i] | (pcm[i + 1] << 8));
                         total++;
                         if (act == expect) match++;
                     }
-                    if (probe.Length == 0 && len >= 8)
+                    if (probe.IndexOf("首个包") < 0 && len >= 8)
                     {
-                        probe = "首个包 seq=" + seq + " 实际=" +
+                        probe = probe + "；首个包 seq=" + seq + " 实际=" +
                                 (short)(pcm[0] | (pcm[1] << 8)) + "," +
                                 (short)(pcm[2] | (pcm[3] << 8)) + "," +
                                 (short)(pcm[4] | (pcm[5] << 8)) + " 期望=" +
