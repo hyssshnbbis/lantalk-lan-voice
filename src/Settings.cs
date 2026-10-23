@@ -172,8 +172,10 @@ namespace LanTalk
 
             Device = new DeviceCard(18, 18);
             Mode = new ModeCard(442, 18);
+            Mode.MicGain.Value = Profile.MicGain;
+            Mode.MicGainVal.Text = Profile.MicGain + "%";
             // 噪声处理：卡片本身在 Cards.cs 的 NoiseCard 里，这里只负责接线
-            Noise = new NoiseCard(18, 366);
+            Noise = new NoiseCard(18, 402);      // 通话模式卡变高了，噪声卡跟着下移
             Noise.Hum.SetCheckedSilently(Profile.HumFilter);
             Noise.KeyClick.SetCheckedSilently(Profile.ClickFilter);
             Noise.Side.SetCheckedSilently(Profile.Sidetone);

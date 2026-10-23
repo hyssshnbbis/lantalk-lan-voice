@@ -27,6 +27,7 @@ namespace LanTalk
         private static bool _humFilter = AppPaths.IsPreview;
         private static bool _clickFilter = AppPaths.IsPreview;
         private static bool _sidetone;
+        private static int _micGain = 100;
         private static Image _avatar;
         private static bool _avatarLoaded;
 
@@ -56,6 +57,21 @@ namespace LanTalk
         }
 
         /// <summary>键盘等冲击噪声抑制，默认开。</summary>
+        /// <summary>麦克风增益百分比 0..150。100 = 原样，>100 会放大（可能削顶）。</summary>
+        public static int MicGain
+        {
+            get { return _micGain; }
+            set
+            {
+                int v = value;
+                if (v < 0) v = 0;
+                if (v > 150) v = 150;
+                if (v == _micGain) return;
+                _micGain = v;
+                Save();
+            }
+        }
+
         public static bool ClickFilter
         {
             get { return _clickFilter; }
@@ -171,6 +187,7 @@ namespace LanTalk
                     else if (k == "humfilter") _humFilter = v != "0";
                     else if (k == "clickfilter") _clickFilter = v != "0";
                     else if (k == "sidetone") _sidetone = v != "0";
+            else if (k == "micgain") { int g; if (int.TryParse(v, out g)) { if (g < 0) g = 0; if (g > 150) g = 150; _micGain = g; } }
                 }
             }
             catch { }
@@ -187,6 +204,7 @@ namespace LanTalk
                 sb.AppendLine("humfilter=" + (_humFilter ? "1" : "0"));
                 sb.AppendLine("clickfilter=" + (_clickFilter ? "1" : "0"));
                 sb.AppendLine("sidetone=" + (_sidetone ? "1" : "0"));
+            sb.AppendLine("micgain=" + _micGain);
                 File.WriteAllText(FilePath, sb.ToString(), Encoding.UTF8);
             }
             catch { }

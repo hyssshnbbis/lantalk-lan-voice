@@ -441,9 +441,13 @@ namespace LanTalk
         private HumNotch _humNotch;
         private ClickGuard _clickGuard;
         private short[] _fxBuf;
+        private short[] _monBuf;
 
         /// <summary>耳返：把处理后的麦克风声音混进本地播放，用来自己试听降噪效果。</summary>
         public bool Sidetone;
+
+        /// <summary>麦克风增益百分比 0..150：100 原样，&gt;100 放大（可能削顶）。</summary>
+        public int MicGainPercent = 100;
 
         /// <summary>电流声抑制（工频陷波）。</summary>
         public bool HumFilter;
@@ -768,9 +772,8 @@ namespace LanTalk
             if (n <= 0) return;
 
             bool fx = HumFilter || ClickFilter;
-            bool monitor = Sidetone && _mixer != null;
-            // 既不处理也不耳返：原样直通，连搬运都省了
-            if (!fx && !monitor) return;
+            // 两个开关都关：原样直通，连搬运都省了（耳返不在这里做，见 OnCaptured）
+            if (!fx) return;
 
             if (_fxBuf == null || _fxBuf.Length < n) _fxBuf = new short[n];
             for (int i = 0; i < n; i++) _fxBuf[i] = (short)(pcm[i * 2] | (pcm[i * 2 + 1] << 8));
@@ -782,18 +785,42 @@ namespace LanTalk
             }
             if (ClickFilter) _clickGuard.Process(_fxBuf, n);
 
-            // 耳返取的是"处理之后"的信号，这样听到的就是对方会听到的。
-            // 注意这是在 !fx 的早退之后：两个开关都关时耳返照样要出声（曾经因为上面的
-            // 早退把这两件事捆在一起，导致"耳返开着但听不见"）。
-            if (monitor) _mixer.PushMonitor(_fxBuf, n);
-
-            if (!fx) return;   // 只做耳返时不要让 PCM 走一遍无用往返，保证 bit-exact 直通
+            if (!fx) return;   // 什么都不处理就直接直通，保证降噪关闭时 bit-exact
 
             for (int i = 0; i < n; i++)
             {
                 pcm[i * 2] = (byte)(_fxBuf[i] & 0xFF);
                 pcm[i * 2 + 1] = (byte)((_fxBuf[i] >> 8) & 0xFF);
             }
+        }
+
+        /// <summary>麦克风增益：原地放大/衰减 PCM16，超出范围就削顶。</summary>
+        private void ApplyMicGain(byte[] pcm, int len)
+        {
+            int g = MicGainPercent;
+            if (g == 100) return;
+            if (g < 0) g = 0;
+            if (g > 150) g = 150;
+            for (int i = 0; i + 1 < len; i += 2)
+            {
+                int s = pcm[i] | (pcm[i + 1] << 8);
+                if (s > 32767) s -= 65536;
+                int v = s * g / 100;
+                if (v > 32767) v = 32767;
+                else if (v < -32768) v = -32768;
+                pcm[i] = (byte)(v & 0xFF);
+                pcm[i + 1] = (byte)((v >> 8) & 0xFF);
+            }
+        }
+
+        /// <summary>把 PCM16 字节流转成 short 后送进混音器（耳返）。</summary>
+        private void PushSidetone(byte[] pcm, int len)
+        {
+            int n = len / 2;
+            if (n <= 0) return;
+            if (_monBuf == null || _monBuf.Length < n) _monBuf = new short[n];
+            for (int i = 0; i < n; i++) _monBuf[i] = (short)(pcm[i * 2] | (pcm[i * 2 + 1] << 8));
+            _mixer.PushMonitor(_monBuf, n);
         }
 
         private void OnCaptured(byte[] pcm, int len)
@@ -804,7 +831,13 @@ namespace LanTalk
 
             if (_useNsEngine) _nsDenoiser.ProcessPcm(pcm, len);
             else _denoiser.ProcessPcm(pcm, len);
+
+            // 麦克风增益放在降噪之后、编码之前：电平表、耳返、发出去的音频看到的是同一个信号
+            ApplyMicGain(pcm, len);
             _inLevel = Peak(pcm, len);
+
+            // 耳返取最终信号（过完降噪和增益），听到的就是对方会听到的
+            if (Sidetone && _mixer != null) PushSidetone(pcm, len);
 
             bool silent = _micMuted || (_pttMode && !_pttTalking);
             byte[] payload = Encode(pcm, len, silent);

@@ -59,6 +59,8 @@ namespace LanTalk
         private FlatButton _btnPtt;
         private Label _lblVolVal;
         private DarkSlider _trkVolume;
+        private DarkSlider _trkMicGain;
+        private Label _lblMicGainVal;
         private CheckBox _chkSpkMute, _chkMicMute;
         private DarkSelect _cmbDenoise;
 
@@ -257,6 +259,8 @@ namespace LanTalk
             _btnPtt = _cardMode.PttButton;
             _trkVolume = _cardMode.Volume;
             _lblVolVal = _cardMode.VolVal;
+            _trkMicGain = _cardMode.MicGain;
+            _lblMicGainVal = _cardMode.MicGainVal;
             _chkSpkMute = _cardMode.SpkMute;
             _chkMicMute = _cardMode.MicMute;
             _cmbDenoise = _cardMode.Denoise;
@@ -266,6 +270,7 @@ namespace LanTalk
             _btnPtt.MouseUp += OnPttUp;
             _btnPtt.MouseLeave += OnPttUp;
             _trkVolume.ValueChanged += OnVolumeChanged;
+            _trkMicGain.ValueChanged += OnMicGainChanged;
             _chkSpkMute.CheckedChanged += OnMuteChanged;
             _chkMicMute.CheckedChanged += OnMuteChanged;
             _cmbDenoise.SelectedIndexChanged += OnDenoiseChanged;
@@ -610,6 +615,7 @@ namespace LanTalk
             _audio.HumFilter = Profile.HumFilter;
             _audio.ClickFilter = Profile.ClickFilter;
             _audio.Sidetone = Profile.Sidetone;
+            _audio.MicGainPercent = Profile.MicGain;
             _audio.SetDenoiseLevel(_args.EffectiveDenoise());
             if (_args.NullAudio && !_args.DenoiseSpecified)
                 Log.Write("内置测试音源，降噪默认关");
@@ -865,8 +871,62 @@ Log.Write("降噪引擎 " + (_args.UseNsEngine ? "WebRTC NS" : "轻量版"));
                 return;
             }
 
-            // volume / menu（右键）都交给成员小窗：那里能拉音量，也能静音
+            if (action == "volume")
+            {
+                ShowVolumePopup(key);
+                return;
+            }
+
+            // menu（右键）才出成员小窗
             ShowMemberMenu(key);
+        }
+
+        /// <summary>
+        /// 别人卡片上点「音量」图标弹出的音量条：只有一条滑块，不再把整个成员小窗摆出来。
+        /// 边拉边生效，关掉弹层时再统一刷新卡片（避免拖动过程中每帧都重排）。
+        /// </summary>
+        private void ShowVolumePopup(string key)
+        {
+            if (_conference == null || string.IsNullOrEmpty(key)) return;
+            Member m = _conference.MemberByKey(key);
+            if (m == null) return;
+
+            ContextMenuStrip bar = new ContextMenuStrip();
+            DarkMenu.Apply(bar);
+            bar.Padding = new Padding(0, 4, 0, 4);
+
+            ToolStripMenuItem tip = new ToolStripMenuItem("音量 " + m.Volume + "%");
+            tip.Enabled = false;
+            tip.Font = Theme.FontSmall;
+            tip.Padding = new Padding(DarkMenu.TextPad, 2, DarkMenu.TextPad, 0);
+            bar.Items.Add(tip);
+
+            DarkSlider slider = new DarkSlider();
+            slider.Minimum = 0;
+            slider.Maximum = 100;
+            slider.Value = m.Volume;
+            slider.Width = 176;
+            slider.Height = 28;
+            slider.BackColor = DarkMenu.Bg;
+
+            ToolStripControlHost host = new ToolStripControlHost(slider);
+            host.BackColor = DarkMenu.Bg;
+            host.Padding = new Padding(DarkMenu.TextPad - 4, 0, DarkMenu.TextPad - 4, 6);
+
+            slider.ValueChanged += delegate
+            {
+                tip.Text = "音量 " + slider.Value + "%";
+                if (_conference != null) _conference.SetMemberVolume(key, slider.Value);
+            };
+            bar.Items.Add(host);
+
+            // 拉完关掉时把卡片上的图标状态（音量低于 100 会变黄）同步一次
+            bar.Closed += delegate { RefreshMemberList(); };
+
+            // 以图标为中心往左挪半个弹层宽度，别让鼠标正好压在滑块上
+            Point at = Cursor.Position;
+            at.Offset(-96, 10);
+            bar.Show(at);
         }
 
         /// <summary>把会议成员刷到看板上。自己永远排第一张卡，其余按名字排，免得每 500ms 跳序。</summary>
@@ -1158,6 +1218,15 @@ Log.Write("降噪引擎 " + (_args.UseNsEngine ? "WebRTC NS" : "轻量版"));
             _lblVolVal.Text = _trkVolume.Value + "%";
         }
 
+        /// <summary>麦克风增益 0..150%：立刻生效，并记进设置（下次启动还是这个值）。</summary>
+        private void OnMicGainChanged(object sender, EventArgs e)
+        {
+            int v = _trkMicGain.Value;
+            _lblMicGainVal.Text = v + "%";
+            Profile.MicGain = v;
+            if (_audio != null) _audio.MicGainPercent = Profile.MicGain;
+        }
+
         private void OnMuteChanged(object sender, EventArgs e)
         {
             // 顶栏胶囊与复选框状态双向同步（要在 _audio 判空之前，否则空闲时不同步）
@@ -1356,6 +1425,7 @@ Log.Write("降噪引擎 " + (_args.UseNsEngine ? "WebRTC NS" : "轻量版"));
             _audio.HumFilter = Profile.HumFilter;
             _audio.ClickFilter = Profile.ClickFilter;
             _audio.Sidetone = Profile.Sidetone;
+            _audio.MicGainPercent = Profile.MicGain;
             Log.Write("噪声处理：电流声 " + (Profile.HumFilter ? "开" : "关") + "、键盘声 " + (Profile.ClickFilter ? "开" : "关") + "、耳返 " + (Profile.Sidetone ? "开" : "关"));
         }
         // ==================== 头像 ====================

@@ -397,12 +397,14 @@ namespace LanTalk
         public readonly FlatButton PttButton;
         public readonly DarkSlider Volume;
         public readonly Label VolVal;
+        public readonly DarkSlider MicGain;
+        public readonly Label MicGainVal;
         public readonly CheckBox SpkMute;
         public readonly CheckBox MicMute;
         public readonly DarkSelect Denoise;
 
         public const int CardW = 404;
-        public const int CardH = 340;
+        public const int CardH = 376;
 
         public ModeCard(int x, int y) : base("通话模式与音量", x, y, CardW, CardH)
         {
@@ -424,7 +426,18 @@ namespace LanTalk
             Volume.SetBounds(PadH, vy + 20, InnerW, 28);
             Controls.Add(Volume);
 
-            int my = vy + 20 + 28 + RowGap + 2;
+            // 麦克风增益：放音音量管"听别人"，这里管"别人听你"
+            int gy = vy + 20 + 28 + RowGap + 2;
+            Caption("麦克风增益", PadH, gy, 80);
+            MicGainVal = Value("100%", Width - PadH - 64, gy, 64);
+            MicGain = new DarkSlider();
+            MicGain.Minimum = 0;
+            MicGain.Maximum = 150;
+            MicGain.Value = 100;
+            MicGain.SetBounds(PadH, gy + 20, InnerW, 28);
+            Controls.Add(MicGain);
+
+            int my = gy + 20 + 28 + RowGap + 2;
             SpkMute = Check("静音扬声器", PadH, my, 120);
             MicMute = Check("静音话筒", PadH + 128, my, 116);
 
