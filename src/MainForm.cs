@@ -1,4 +1,4 @@
-﻿// MainForm.cs —— 图形界面（WinForms，纯代码构建，无设计器文件）
+// MainForm.cs —— 图形界面（WinForms，纯代码构建，无设计器文件）
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -637,6 +637,7 @@ namespace LanTalk
             _audio.UseNsEngine = _args.UseNsEngine;
             _audio.HumFilter = Profile.HumFilter;
             _audio.ClickFilter = Profile.ClickFilter;
+            _audio.Sidetone = Profile.Sidetone;
             _audio.SetDenoiseLevel(_args.EffectiveDenoise());
             if (_args.NullAudio && !_args.DenoiseSpecified)
                 Log.Write("内置测试音源模式：降噪默认关闭（可用 --denoise 强制开启）");
@@ -1451,7 +1452,8 @@ namespace LanTalk
             if (_audio == null) return;
             _audio.HumFilter = Profile.HumFilter;
             _audio.ClickFilter = Profile.ClickFilter;
-            Log.Write("噪声处理：电流声抑制=" + (Profile.HumFilter ? "开" : "关") + "，键盘声抑制=" + (Profile.ClickFilter ? "开" : "关"));
+            _audio.Sidetone = Profile.Sidetone;
+            Log.Write("噪声处理：电流声抑制=" + (Profile.HumFilter ? "开" : "关") + "，键盘声抑制=" + (Profile.ClickFilter ? "开" : "关") + "，耳返=" + (Profile.Sidetone ? "开" : "关"));
         }
         // ==================== 头像 ====================
 

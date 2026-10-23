@@ -117,7 +117,7 @@ namespace LanTalk
         public readonly PictureBox AvatarBox;
         public readonly FlatButton AvatarPick, AvatarClear;
         public readonly Label ProfileHint;
-        public readonly FlatButton HumBtn, ClickBtn;
+        public readonly FlatButton HumBtn, ClickBtn, SideBtn;
 
         /// <summary>噪声开关变更时通知外部重新应用到音频链路。</summary>
         public event Action MainAudioChanged;
@@ -172,7 +172,7 @@ namespace LanTalk
             Mode = new ModeCard(442, 18);
             // 噪声处理：工频陷波与瞬态抑制，各自可独立开关
             CardPanel noise = new CardPanel();
-            noise.SetBounds(18, 366, 828, 96);
+            noise.SetBounds(18, 366, 828, 136);
             Label nTitle = new Label();
             nTitle.Text = "噪声处理";
             nTitle.Font = Theme.FontTitle;
@@ -215,12 +215,25 @@ namespace LanTalk
             };
             noise.Controls.Add(ClickBtn);
 
+            SideBtn = new FlatButton(FlatButton.Look.Normal);
+            SideBtn.Text = "耳返试听";
+            SideBtn.Selected = Profile.Sidetone;
+            SideBtn.SetBounds(338, 56, 150, 30);
+            SideBtn.Click += delegate
+            {
+                Profile.Sidetone = !Profile.Sidetone;
+                SideBtn.Selected = Profile.Sidetone;
+                Action cbSide = MainAudioChanged;
+                if (cbSide != null) cbSide();
+            };
+            noise.Controls.Add(SideBtn);
+
             Label nState = new Label();
-            nState.Text = "默认都开启。若觉得人声发闷或说话被压低，可以先关掉对应项对比。";
+            nState.Text = "前两项默认都开启，若觉得人声发闷可关掉对比。耳返是把自己处理后的声音放给你自己听——务必戴耳机，外放会啸叫。";
             nState.Font = Theme.FontSmall;
             nState.ForeColor = Theme.TextMuted;
             nState.BackColor = Color.Transparent;
-            nState.SetBounds(340, 62, 470, 18);
+            nState.SetBounds(14, 100, 790, 18);
             noise.Controls.Add(nState);
 
             PageSettings.Controls.AddRange(new Control[] { Device, Mode, noise });

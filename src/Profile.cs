@@ -26,6 +26,7 @@ namespace LanTalk
         // 默认值：测试版默认开（方便试听），正式版默认关（不惊动现有用户）
         private static bool _humFilter = AppPaths.IsPreview;
         private static bool _clickFilter = AppPaths.IsPreview;
+        private static bool _sidetone;
         private static Image _avatar;
         private static bool _avatarLoaded;
 
@@ -45,6 +46,13 @@ namespace LanTalk
         {
             get { return _humFilter; }
             set { _humFilter = value; Save(); }
+        }
+
+        /// <summary>耳返：把自己的麦克风（处理后的）混进本地播放，便于自己试听。</summary>
+        public static bool Sidetone
+        {
+            get { return _sidetone; }
+            set { _sidetone = value; Save(); }
         }
 
         /// <summary>键盘等冲击噪声抑制，默认开。</summary>
@@ -162,6 +170,7 @@ namespace LanTalk
                     else if (k == "clientId") _clientId = v;
                     else if (k == "humfilter") _humFilter = v != "0";
                     else if (k == "clickfilter") _clickFilter = v != "0";
+                    else if (k == "sidetone") _sidetone = v != "0";
                 }
             }
             catch { }
@@ -177,6 +186,7 @@ namespace LanTalk
                 sb.AppendLine("clientId=" + _clientId);
                 sb.AppendLine("humfilter=" + (_humFilter ? "1" : "0"));
                 sb.AppendLine("clickfilter=" + (_clickFilter ? "1" : "0"));
+                sb.AppendLine("sidetone=" + (_sidetone ? "1" : "0"));
                 File.WriteAllText(FilePath, sb.ToString(), Encoding.UTF8);
             }
             catch { }

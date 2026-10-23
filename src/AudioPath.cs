@@ -263,6 +263,48 @@ namespace LanTalk
 
         public Mixer(AudioPath owner) { _owner = owner; }
 
+        // ---- 耳返：把处理后的麦克风样本排进播放队列，混进同一路输出 ----
+        private readonly short[] _mon = new short[8192];
+        private int _monRead, _monCount;
+        private readonly object _monLock = new object();
+
+        /// <summary>耳返入队。跟不上播放（设备卡顿）时丢最旧的，宁可断续也不让延迟越积越大。</summary>
+        public void PushMonitor(short[] src, int len)
+        {
+            if (src == null || len <= 0) return;
+            if (len > _mon.Length) { src = null; return; }
+            lock (_monLock)
+            {
+                if (_monCount + len > _mon.Length)
+                {
+                    int drop = _monCount + len - _mon.Length;
+                    _monRead = (_monRead + drop) % _mon.Length;
+                    _monCount -= drop;
+                }
+                for (int i = 0; i < len; i++) _mon[(_monRead + _monCount + i) % _mon.Length] = src[i];
+                _monCount += len;
+            }
+        }
+
+        public void ClearMonitor() { lock (_monLock) { _monRead = 0; _monCount = 0; } }
+
+        private int MixMonitor(int samples)
+        {
+            lock (_monLock)
+            {
+                if (_monCount <= 0) return 0;
+                int n = samples < _monCount ? samples : _monCount;
+                for (int i = 0; i < n; i++)
+                {
+                    int v = _mon[(_monRead + i) % _mon.Length];
+                    _acc[i] += (int)(v * 0.7);   // 耳返压低一些，避免吓到自己
+                }
+                _monRead = (_monRead + n) % _mon.Length;
+                _monCount -= n;
+                return n;
+            }
+        }
+
         /// <summary>把一个提示音排进混音队列。多个同时触发会叠加，所以限制了并发数。</summary>
         public void Enqueue(short[] samples)
         {
@@ -338,7 +380,9 @@ namespace LanTalk
             // 提示音混进来（没人说话时也要能响）
             int chimeActive = MixChimes(samples);
 
-            if (alive == 0 && chimeActive == 0) { _peak = 0; return 0; }   // 全部无声：交给播放层补静音
+            int monActive = MixMonitor(samples);
+
+            if (alive == 0 && chimeActive == 0 && monActive == 0) { _peak = 0; return 0; }   // 全部无声：交给播放层补静音
 
             int peak = 0;
             for (int i = 0; i < samples; i++)
@@ -390,6 +434,9 @@ namespace LanTalk
         private HumNotch _humNotch;
         private ClickGuard _clickGuard;
         private short[] _fxBuf;
+
+        /// <summary>耳返：把处理后的麦克风声音混进本地播放，用来自己试听降噪效果。</summary>
+        public bool Sidetone;
 
         /// <summary>电流声抑制（工频陷波）。</summary>
         public bool HumFilter;
@@ -711,6 +758,10 @@ namespace LanTalk
                 _humNotch.Process(_fxBuf, n);
             }
             if (ClickFilter) _clickGuard.Process(_fxBuf, n);
+            if (ClickFilter) _clickGuard.Process(_fxBuf, n);
+
+            // 耳返取的是"处理之后"的信号，这样听到的就是对方会听到的
+            if (Sidetone && _mixer != null) _mixer.PushMonitor(_fxBuf, n);
 
             for (int i = 0; i < n; i++)
             {
