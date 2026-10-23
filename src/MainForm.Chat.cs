@@ -35,7 +35,7 @@ namespace LanTalk
             _cardChat.Add("我", text, true, now);
             ChatHistory.Append(now, "我", text, true);
 
-            if (!sent) Log.Write("聊天没发出去：当前既不在会议室，也没有接通的一对一通话。");
+            if (!sent) Log.Write("聊天没发出去：还没进会议。");
         }
 
         /// <summary>自己发一张图（剪贴板粘贴触发）。</summary>
@@ -51,7 +51,7 @@ namespace LanTalk
 
             DateTime now = DateTime.Now;
             _cardChat.AddImage("我", jpeg, true, now);
-            if (sent <= 0) Log.Write("图片没发出去：当前既不在会议室，也没有接通的一对一通话。");
+            if (sent <= 0) Log.Write("图片没发出去：还没进会议。");
         }
 
         /// <summary>收到对方发来的图片。</summary>

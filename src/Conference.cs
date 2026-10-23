@@ -149,11 +149,10 @@ namespace LanTalk
                 _departed.Clear();
                 _tickAccumMs = AnnounceMs;   // 让 Tick 立刻广播一次
             }
-            Log("已加入会议室（房间号 " + roomPort + "）。正在广播寻找同伴…");
-            Log("房间号就是端口号：同一房间的人请填同一个号码。我的标识 " + MyId.ToString("x8") + "。");
+            Log("进房 " + roomPort + "，广播中…");
+            Log("我的标识 " + MyId.ToString("x8"));
             try { _audio.Start(false); } catch (Exception ex) { Log("打开音频设备失败：" + ex.Message); }
             _audio.PlayChime(ChimeKind.JoinRoom);
-            Log("提示音：进房");
             RaiseChanged();
         }
 
@@ -170,7 +169,7 @@ namespace LanTalk
             _net.ClearPeers();
             lock (_lock) { _members.Clear(); }
             try { _audio.Stop(); } catch { }
-            Log("已离开会议室。");
+            Log("已离房。");
             RaiseChanged();
         }
 
@@ -184,12 +183,12 @@ namespace LanTalk
             IPAddress a;
             if (!IPAddress.TryParse(ip, out a))
             {
-                Log("手工添加失败：不是合法的 IP 地址 —— " + ip);
+                Log("IP 不合法：" + ip);
                 return;
             }
             IPEndPoint ep = new IPEndPoint(a, port);
             _net.AddPeer(ep);
-            Log("已登记联系点 " + ep + "，对方若在房间里，几秒内会出现在成员列表中。");
+            Log("联系点 " + ep);
         }
 
         public void RemoveMember(string key)
@@ -199,7 +198,7 @@ namespace LanTalk
             lock (_lock) { _members.Remove(m); }
             _net.RemovePeer(m.EndPoint);
             _audio.RemoveChannel(m.IdNum);
-            Log("已移除成员：" + m.Display);
+            Log("移出：" + m.Display);
             RaiseChanged();
         }
 
@@ -289,7 +288,6 @@ namespace LanTalk
                 if ((DateTime.UtcNow - _joinedAt).TotalSeconds > JoinChimeSettleSec)
                 {
                     _audio.PlayChime(ChimeKind.MemberJoin);
-                    Log("提示音：成员加入");
                 }
                 return m;
             }
@@ -307,8 +305,7 @@ namespace LanTalk
             _net.RemovePeer(m.EndPoint);
             _audio.RemoveChannel(m.IdNum);
             _audio.PlayChime(ChimeKind.MemberLeave);
-            Log("提示音：成员离开");
-            Log("成员已离开：" + (string.IsNullOrEmpty(m.Name) ? m.Key : m.Name) + (why.Length > 0 ? "（" + why + "）" : ""));
+            Log("成员离开：" + (string.IsNullOrEmpty(m.Name) ? m.Key : m.Name) + (why.Length > 0 ? " · " + why : ""));
         }
 
         // ================== 收包 ==================
@@ -380,7 +377,7 @@ namespace LanTalk
                         PeerStore.Prune();
                     }
                     if (m == null) return;
-                    Log("收到头像：" + ((string.IsNullOrEmpty(m.Name) ? m.Key : m.Name)) + "  " + (jpeg.Length / 1024) + " KB");
+                    Log("头像 " + ((string.IsNullOrEmpty(m.Name) ? m.Key : m.Name)) + " " + (jpeg.Length / 1024) + "KB");
                     Action<string, byte[]> h = AvatarChanged;
                     if (h != null) { try { h(m.Key, jpeg); } catch { } }
                 });
@@ -393,7 +390,7 @@ namespace LanTalk
                 string imgWho = src == null ? "对方" : src.Address.ToString();
                 _imgAsm.Add(payload, len, delegate(uint id, byte[] data)
                 {
-                    Log("收到图片 " + (data.Length / 1024) + " KB，来自 " + imgWho);
+                    Log("图片 " + (data.Length / 1024) + "KB 来自 " + imgWho);
                     Action<string, byte[]> h = ImageReceived;
                     if (h != null) { try { h(imgWho, data); } catch { } }
                 });
@@ -460,7 +457,7 @@ namespace LanTalk
                     }
                 if (m != null && isNew)
                 {
-                    Log("成员加入：" + (string.IsNullOrEmpty(name) ? src.ToString() : name) + "  " + src);
+                    Log("成员加入 " + (string.IsNullOrEmpty(name) ? src.ToString() : name));
                     RaiseChanged();
                     if (p == Pkt.RoomHello)
                     {
@@ -694,7 +691,7 @@ namespace LanTalk
                 if (!any) break;
                 sent++;
             }
-            Log("发出图片：" + (jpeg.Length / 1024) + " KB，切成 " + total + " 片");
+            Log("发图 " + (jpeg.Length / 1024) + "KB / " + total + " 片");
             return sent;
         }
 
@@ -726,7 +723,7 @@ namespace LanTalk
                 byte[] chunk = ImageWire.BuildChunk(msgId, ci, total, blob, off, len);
                 try { _net.SendControl(Pkt.Avatar, chunk, chunk.Length, peer); AvatarChunksSent++; } catch { return; }
             }
-            Log("按请求发出头像：" + (_myAvatar.Length / 1024) + " KB，切成 " + total + " 片");
+            Log("发头像 " + (_myAvatar.Length / 1024) + "KB / " + total + " 片");
         }
 
         /// <summary>把当前头像发给所有已知成员。</summary>
@@ -753,7 +750,7 @@ namespace LanTalk
                     try { _net.SendControl(Pkt.Avatar, chunk, chunk.Length, peers[i]); } catch { }
                 }
             }
-            Log("广播头像：" + (_myAvatar.Length / 1024) + " KB，切成 " + total + " 片");
+            Log("广播头像 " + (_myAvatar.Length / 1024) + "KB / " + total + " 片");
         }
 
         private void RaiseChat(string who, string text)

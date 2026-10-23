@@ -24,7 +24,7 @@ namespace LanTalk
         // 两栏容器
         private Panel _viewMain, _sidebar, _main;
         private SettingsPanel _settings;
-        private Label _lblVer;
+
 
         // 板块：各自持有并布局自己的控件，本类只摆放和连事件
         private LocalCard _cardLocal;
@@ -107,9 +107,9 @@ namespace LanTalk
             _tick.Tick += OnTick;
             _tick.Start();
 
-            Log.Write("LanTalk 已启动。本机名称：" + _myName);
-            Log.Write("提示：两台电脑互相 ping 通之后，把对方的 IP 填到「对方 IP」里即可呼叫。");
-            Log.Write("提示：第一次运行如果 Windows 弹出防火墙提示，请勾选「专用网络」并允许访问。");
+            Log.Write("启动 " + _myName);
+            Log.Write("提示：房间号就是端口，同一个号就是同一个会议。");
+            Log.Write("提示：首次运行若弹防火墙，请允许「专用网络」。");
         }
 
         // ================= 界面构建 =================
@@ -163,23 +163,29 @@ namespace LanTalk
             _sidebar.SetBounds(0, 0, 278, 780);
             _sidebar.BackColor = Theme.SidebarBg;
 
-            _cardLocal = new LocalCard(12, 12);
-            _cardRoom = new RoomCard(12, 262);
+            // 侧栏从上到下排满：本机 / 房间号 / 会议成员 / 电平统计 / 运行日志。
+            // 间距统一 12，运行日志吃掉最后剩下的高度，整列不会留空位。
+            int sideX = 12, sideW = 254, gap = 12;
+            int y = gap;
+
+            _cardLocal = new LocalCard(sideX, y);
+            y += LocalCard.CardH + gap;
+
+            _cardRoom = new RoomCard(sideX, y);
             _cardRoom.Visible = false;
+            y += RoomCard.CardH + gap;
 
             // 侧栏保留紧凑的成员名单；主区另有一块大头像看板，两边数据同源。
-            _cardMembers = new MembersCard(12, 440, 158);
+            _cardMembers = new MembersCard(sideX, y, 158);
+            y += 158 + gap;
 
-            _cardMeter = new MeterCard(12, 604);
+            _cardMeter = new MeterCard(sideX, y);
+            y += MeterCard.CardH + gap;
 
-            _lblVer = new Label();
-            _lblVer.Text = "v" + SettingsPanel.AppVersion + AppPaths.Suffix;
-            _lblVer.SetBounds(14, 738, 240, 18);
-            _lblVer.Font = Theme.FontSmall;
-            _lblVer.ForeColor = Theme.TextMuted;
-            _lblVer.BackColor = Color.Transparent;
+            _cardLog = new LogCard(sideX, y, sideW, 780 - gap - y);
+            _cardLog.CornerText = "v" + SettingsPanel.AppVersion + AppPaths.Suffix;
 
-            _sidebar.Controls.AddRange(new Control[] { _cardLocal, _cardRoom, _cardMembers, _cardMeter, _lblVer });
+            _sidebar.Controls.AddRange(new Control[] { _cardLocal, _cardRoom, _cardMembers, _cardMeter, _cardLog });
         }
 
         // ==================== 主区 ====================
@@ -189,12 +195,12 @@ namespace LanTalk
             _main.SetBounds(278, 0, 842, 780);
             _main.BackColor = Theme.MainBg;
 
-            // 主区从上到下：成员看板 → 聊天 → 运行日志
+            // 主区只有两块：成员看板 + 聊天。聊天一直拉到底，运行日志已经挪到侧栏。
             _cardBoard = new MemberBoardCard(12, 12, 818, MemberBoardCard.BoardH);
-            _cardChat = new ChatCard(12, 306, 818, 298);
-            _cardLog = new LogCard(12, 612, 818, 156);
+            int chatY = 12 + MemberBoardCard.BoardH + 12;
+            _cardChat = new ChatCard(12, chatY, 818, 780 - 12 - chatY);
 
-            _main.Controls.AddRange(new Control[] { _cardBoard, _cardChat, _cardLog });
+            _main.Controls.AddRange(new Control[] { _cardBoard, _cardChat });
         }
 
         // ==================== 把板块控件挂到别名 + 连事件 ====================
@@ -606,11 +612,9 @@ namespace LanTalk
             _audio.Sidetone = Profile.Sidetone;
             _audio.SetDenoiseLevel(_args.EffectiveDenoise());
             if (_args.NullAudio && !_args.DenoiseSpecified)
-                Log.Write("内置测试音源模式：降噪默认关闭（可用 --denoise 强制开启）");
+                Log.Write("内置测试音源，降噪默认关");
             if (_cmbEngine != null) _cmbEngine.SelectedIndex = _args.UseNsEngine ? 0 : 1;
-            Log.Write("降噪引擎：" + (_args.UseNsEngine
-                ? "WebRTC NS 移植版（可在「音频设备」里随时切换）"
-                : "轻量版（可在「音频设备」里随时切换）"));
+Log.Write("降噪引擎 " + (_args.UseNsEngine ? "WebRTC NS" : "轻量版"));
             SyncDenoiseCombo(_args.EffectiveDenoise());
 
             _conference = new Conference(_net, _audio, _myName);
@@ -622,7 +626,7 @@ namespace LanTalk
 
             _lblLocalHint.Text = "监听 " + _net.LocalEndPointText;
             _lblLocalHint.ForeColor = Theme.Accent;
-            Log.Write("监听已就绪：" + _net.LocalEndPointText + "（一对一模式下对方要连的就是这个地址）");
+            Log.Write("监听 " + _net.LocalEndPointText);
         }
 
         private void SyncDenoiseCombo(DenoiseLevel lv)
@@ -647,7 +651,7 @@ namespace LanTalk
         {
             if (_conference != null && _conference.Joined)
             {
-                Log.Write("会议中不能改监听设置，请先离开会议。");
+                Log.Write("先离开会议再改监听。");
                 return;
             }
             RebuildSession();
@@ -657,7 +661,7 @@ namespace LanTalk
         {
             if (_conference != null && _conference.Joined)
             {
-                Log.Write("会议中不能切换设备，请先离开会议。");
+                Log.Write("先离开会议再换设备。");
                 return;
             }
             LoadDevices();
@@ -668,11 +672,11 @@ namespace LanTalk
         {
             if (_conference != null && _conference.Joined)
             {
-                Log.Write("会议中不能改编码，将在下一次生效。");
+                Log.Write("编码下次生效。");
                 return;
             }
             if (_audio != null) _audio.Codec = SelectedCodec();
-            Log.Write("语音编码已切换为：" + CodecUtil.Name(SelectedCodec()));
+            Log.Write("编码 " + CodecUtil.Name(SelectedCodec()));
         }
 
         // ================= 通话方式：一对一 / 会议室 =================
@@ -694,7 +698,7 @@ namespace LanTalk
 
             if (!room && _conference != null && _conference.Joined)
             {
-                Log.Write("已切回一对一模式，自动退出会议。");
+                Log.Write("已退出会议。");
                 _conference.Leave();
             }
 
@@ -716,14 +720,14 @@ namespace LanTalk
             int room;
             if (!int.TryParse(_txtRoomPort.Text.Trim(), out room) || room <= 0 || room > 65535)
             {
-                Log.Write("房间号必须是 1～65535 的数字（它同时就是本程序的监听端口）。");
+                Log.Write("房间号要是 1~65535 的数字。");
                 return;
             }
             // 房间号 = 监听端口；不一致就先按房间号重新监听
             if (_net.LocalPort != room)
             {
                 _txtLocalPort.Text = room.ToString();
-                Log.Write("先把监听端口改成房间号 " + room + " 并重新监听…");
+                Log.Write("监听改到 " + room + "…");
                 RebuildSession();
                 if (_net == null || _net.LocalPort != room)
                 {
@@ -1001,9 +1005,7 @@ namespace LanTalk
             bool ptt = _rdoPtt.Checked;
             _btnPtt.Enabled = ptt;
             if (_audio != null) _audio.PttMode = ptt;
-            Log.Write(ptt
-                ? "已切到「按键说话」：按住按钮或空格键时才把声音发出去，用扬声器也不会啸叫。"
-                : "已切到「全双工」：请戴耳机，否则扬声器的声音会被话筒收回去形成回声。");
+            Log.Write(ptt ? "按键说话（按住空格才发送）" : "全双工（建议戴耳机，否则回声）");
         }
 
         private DenoiseLevel SelectedDenoise()
@@ -1024,9 +1026,8 @@ namespace LanTalk
             DenoiseLevel lv = SelectedDenoise();
             _audio.SetDenoiseLevel(lv);
             int lat = _audio.UseNsEngine ? NsDenoiser.Latency : Denoiser.Latency;
-            Log.Write("降噪：" + DenoiseLevels.Name(lv) +
-                      (_audio.UseNsEngine ? "（WebRTC NS 引擎）" : "（轻量引擎）") +
-                      (lv == DenoiseLevel.Off ? "，不做任何处理" : "，延迟约 " + (lat * 1000 / Rate) + "ms"));
+            Log.Write("降噪 " + DenoiseLevels.Name(lv) + (_audio.UseNsEngine ? " · NS" : " · 轻量") +
+                      (lv == DenoiseLevel.Off ? " · 关" : " · " + (lat * 1000 / Rate) + "ms"));
         }
 
         /// <summary>切换降噪引擎。取的是 AudioPath 上的开关，下一帧就生效，通话中也能切。</summary>
@@ -1035,9 +1036,7 @@ namespace LanTalk
             if (_audio == null) return;
             bool ns = _cmbEngine.SelectedIndex == 0;
             _audio.UseNsEngine = ns;
-            Log.Write("降噪引擎已切换为：" + (ns
-                ? "WebRTC NS 移植版（非平稳噪声更稳，算法延迟约 6ms）"
-                : "轻量版（稳态噪声略好，算法延迟约 16ms）"));
+            Log.Write("降噪引擎 " + (ns ? "WebRTC NS · 6ms" : "轻量版 · 16ms"));
         }
 
         // ================== 录音对比（降噪 A/B） ==================
@@ -1061,7 +1060,7 @@ namespace LanTalk
 
             _btnRecordAb.Enabled = false;
             Log.Write("========== 录音对比开始 ==========");
-            Log.Write("接下来 10 秒请对着麦克风正常说话，中间自然停顿几秒——程序需要静音段来测底噪。");
+            Log.Write("10 秒内正常说话，中间停几秒（要静音段测底噪）。");
             Log.Write("对比档位：" + DenoiseLevels.Name(lv));
 
             ThreadPool.QueueUserWorkItem(delegate(object st) { RecordAbWorker(lv); });
@@ -1217,7 +1216,7 @@ namespace LanTalk
                 Log.Write("会议中不能做本机回环测试，请先离开会议。");
                 return;
             }
-            Log.Write("开始本机回环测试：话筒采集 → 编码 → 解码 → 扬声器放回（会有 0.1 秒左右延迟，戴耳机更安全）。");
+            Log.Write("回环测试：话筒 → 编码 → 解码 → 扬声器（约 0.1 秒延迟）。");
             _btnLoopTest.Enabled = false;
             Thread t = new Thread(delegate()
             {
@@ -1235,9 +1234,9 @@ namespace LanTalk
                     string kdesc = ap.SinkDescription;
                     ap.Stop();
 
-                    Log.Write("回环结果：录音=" + sdesc + "；放音=" + kdesc);
-                    Log.Write("3 秒内发出 " + sent + " 帧、播放 " + played + " 帧、补静音 " + concealed + " 次。" +
-                              (sent >= 100 && played >= 80 ? "设备工作正常。" : "数值偏低，请在「音频设备」里换一个设备再试。"));
+                    Log.Write("回环：录音 " + sdesc + " / 放音 " + kdesc);
+                    Log.Write("3 秒 发 " + sent + " 帧、播 " + played + " 帧、补静音 " + concealed + " 次 " +
+                              (sent >= 100 && played >= 80 ? "正常" : "偏低，换个设备再试"));
                 }
                 catch (Exception ex)
                 {
@@ -1350,7 +1349,7 @@ namespace LanTalk
             _audio.HumFilter = Profile.HumFilter;
             _audio.ClickFilter = Profile.ClickFilter;
             _audio.Sidetone = Profile.Sidetone;
-            Log.Write("噪声处理：电流声抑制=" + (Profile.HumFilter ? "开" : "关") + "，键盘声抑制=" + (Profile.ClickFilter ? "开" : "关") + "，耳返=" + (Profile.Sidetone ? "开" : "关"));
+            Log.Write("噪声处理：电流声 " + (Profile.HumFilter ? "开" : "关") + "、键盘声 " + (Profile.ClickFilter ? "开" : "关") + "、耳返 " + (Profile.Sidetone ? "开" : "关"));
         }
         // ==================== 头像 ====================
 

@@ -112,6 +112,8 @@ namespace LanTalk
     internal class CardPanel : Panel
     {
         public string Title = "";
+        /// <summary>标题行右端的文字（版本号、人数这类），为空就不画。</summary>
+        public string CornerText = "";
         public int RadiusLogical = 8;
         public Color BorderColor = Theme.CardBorder;
 
@@ -163,6 +165,20 @@ namespace LanTalk
                     sf.LineAlignment = StringAlignment.Center;
                     int pad = Theme.Radius(this, 14);
                     g.DrawString(Title, Theme.FontSmall, b, new RectangleF(pad, Theme.Radius(this, 8), Width - pad * 2, Theme.Radius(this, 18)), sf);
+                }
+            }
+
+            // 右端文字自己画在卡片上：用 Label 贴在卡片上会因为父容器底色不同而露出一块深色矩形
+            if (!string.IsNullOrEmpty(CornerText))
+            {
+                Theme.InitFonts();
+                using (SolidBrush b = new SolidBrush(Theme.TextMuted))
+                using (StringFormat sf = new StringFormat())
+                {
+                    sf.LineAlignment = StringAlignment.Center;
+                    sf.Alignment = StringAlignment.Far;
+                    int pad = Theme.Radius(this, 14);
+                    g.DrawString(CornerText, Theme.FontSmall, b, new RectangleF(pad, Theme.Radius(this, 8), Width - pad * 2, Theme.Radius(this, 18)), sf);
                 }
             }
         }
