@@ -1250,6 +1250,45 @@ namespace LanTalk
     /// 之前用 FlatButton + Selected 表示开关，语义是错的——按钮是"按一下做事"，
     /// 开关是"保持某个状态"。这里做成独立控件，Checked 表示状态，点击翻转。
     /// </summary>
+    /// <summary>
+    /// 统一的「主状态 + 副标题」两行文字块。
+    ///
+    /// 之前各页面各自 new Label 再逐个设字体颜色，容易走样；
+    /// 这里收成公共控件，样式由 Theme 统一决定，卡片经 CardBase.StatusLine() 取用。
+    /// </summary>
+    internal sealed class StatusBlock
+    {
+        public readonly Label Title;
+        public readonly Label Sub;
+
+        internal StatusBlock(Control parent, int x, int y, int w)
+        {
+            Title = new Label();
+            Title.Text = "";
+            Title.Font = Theme.FontUi;
+            Title.ForeColor = Theme.TextPrimary;
+            Title.BackColor = Color.Transparent;
+            Title.AutoEllipsis = true;
+            Title.SetBounds(x, y, w, 20);
+            parent.Controls.Add(Title);
+
+            Sub = new Label();
+            Sub.Text = "";
+            Sub.Font = Theme.FontSmall;
+            Sub.ForeColor = Theme.TextMuted;
+            Sub.BackColor = Color.Transparent;
+            Sub.AutoEllipsis = true;
+            Sub.SetBounds(x, y + 20, w, 18);
+            parent.Controls.Add(Sub);
+        }
+
+        public void Set(string title, string sub, Color? titleColor)
+        {
+            Title.Text = title ?? "";
+            Title.ForeColor = titleColor.HasValue ? titleColor.Value : Theme.TextPrimary;
+            Sub.Text = sub ?? "";
+        }
+    }
     internal sealed class Switch : Control
     {
         private bool _checked;

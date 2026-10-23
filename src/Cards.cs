@@ -158,6 +158,11 @@ namespace LanTalk
         /// 一行「开关 + 标题 + 说明」。开关用 Switch 而不是 CheckBox：
         /// 开关表达"持续状态"，CheckBox 表达"勾选内容"，前者更适合这类设置项。
         /// </summary>
+        /// <summary>统一的两行状态块，样式与其它卡片一致。</summary>
+        protected StatusBlock StatusLine(int x, int y, int w)
+        {
+            return new StatusBlock(this, x, y, w);
+        }
         protected Switch SwitchRow(int x, int y, string title, string desc, int titleW)
         {
             Switch sw = new Switch();
@@ -246,33 +251,6 @@ namespace LanTalk
         }
     }
 
-    // ============================ 对方 ============================
-    internal sealed class PeerCard : CardBase
-    {
-        public readonly DarkInput Ip;
-        public readonly DarkInput Port;
-        public readonly FlatButton Probe;
-        public readonly FlatButton Scan;
-        public readonly Label Presence;
-
-        public const int CardW = 254;
-        public const int CardH = 172;
-
-        public PeerCard(int x, int y) : base("对方", x, y, CardW, CardH)
-        {
-            Caption("对方 IP", PadH, ContentTop, 60);
-            Caption("端口", PadH + 138, ContentTop, 36);
-            int fy = ContentTop + CaptionH + CaptionGap;
-            Ip = Input("例如 192.168.1.23", PadH, fy, 128, false);
-            Port = Input("", PadH + 138, fy, 88, true);
-
-            int by = fy + FieldH + RowGap;
-            Probe = Button("测试连通", PadH, by, 106, 28, FlatButton.Look.Normal);
-            Scan = Button("搜索局域网", PadH + 112, by, InnerW - 112, 28, FlatButton.Look.Normal);
-
-            Presence = Small("对方未设置", PadH, by + 36, InnerW, 40);
-        }
-    }
 
     // =========================== 会议室 ===========================
     internal sealed class RoomCard : CardBase
@@ -673,10 +651,8 @@ namespace LanTalk
 
         private readonly Label _count;
 
-        /// <summary>房间状态（未加入 / 已加入 · N 人）。原来在状态卡上，现在并到这里。</summary>
-        public readonly Label Status;
-        /// <summary>状态副标题：地址、提示、通话时长等。</summary>
-        public readonly Label PeerState;
+        /// <summary>房间状态块（主状态 + 副标题），公共控件，样式统一。</summary>
+        public readonly StatusBlock Head;
 
         public const int CardW = 254;
         public const int CardH = 210;
@@ -695,21 +671,8 @@ namespace LanTalk
             Controls.Add(_count);
 
             // 列表占满剩余高度，底部留 42 给两个按钮
-            Status = new Label();
-            Status.Text = "未加入";
-            Status.Font = Theme.FontUi;
-            Status.ForeColor = Theme.TextPrimary;
-            Status.BackColor = Color.Transparent;
-            Status.SetBounds(PadH, ContentTop - 2, InnerW, 20);
-            Controls.Add(Status);
-
-            PeerState = new Label();
-            PeerState.Text = "";
-            PeerState.Font = Theme.FontSmall;
-            PeerState.ForeColor = Theme.TextMuted;
-            PeerState.BackColor = Color.Transparent;
-            PeerState.SetBounds(PadH, ContentTop + 18, InnerW, 18);
-            Controls.Add(PeerState);
+            Head = StatusLine(PadH, ContentTop - 2, InnerW);
+            Head.Set("未加入", "", null);
 
             RoundedSurface surface = new RoundedSurface();
             surface.SetBounds(PadH, ContentTop + 40, InnerW, h - ContentTop - 40 - 8);

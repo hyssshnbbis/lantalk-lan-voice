@@ -28,7 +28,6 @@ namespace LanTalk
 
         // 板块：各自持有并布局自己的控件，本类只摆放和连事件
         private LocalCard _cardLocal;
-        private PeerCard _cardPeer;
         private RoomCard _cardRoom;
         private MeterCard _cardMeter;
         private DeviceCard _cardDev;
@@ -44,9 +43,6 @@ namespace LanTalk
         private DarkInput _txtLocalPort;
         private Label _lblLocalHint;
 
-        private DarkInput _txtPeerIp, _txtPeerPort;
-        private Label _lblPresence;
-        private FlatButton _btnProbe, _btnScan;
 
         private DarkInput _txtRoomPort, _txtManualIp, _txtManualPort;
         private Label _lblRoomState;
@@ -165,7 +161,6 @@ namespace LanTalk
             _sidebar.BackColor = Theme.SidebarBg;
 
             _cardLocal = new LocalCard(12, 12);
-            _cardPeer = new PeerCard(12, 262);
             _cardRoom = new RoomCard(12, 262);
             _cardRoom.Visible = false;
 
@@ -180,7 +175,7 @@ namespace LanTalk
             _lblVer.ForeColor = Theme.TextMuted;
             _lblVer.BackColor = Color.Transparent;
 
-            _sidebar.Controls.AddRange(new Control[] { _cardLocal, _cardPeer, _cardRoom, _cardMembers, _cardMeter, _lblVer });
+            _sidebar.Controls.AddRange(new Control[] { _cardLocal, _cardRoom, _cardMembers, _cardMeter, _lblVer });
         }
 
         // ==================== 主区 ====================
@@ -209,16 +204,6 @@ namespace LanTalk
             // 连接模式
 
             // 对方
-            _txtPeerIp = _cardPeer.Ip;
-            _txtPeerPort = _cardPeer.Port;
-            _lblPresence = _cardPeer.Presence;
-            _txtPeerIp.Leave += OnPeerTextChanged;
-            _txtPeerIp.TextChanged += OnPeerTextChanged;
-            _txtPeerPort.TextChanged += OnPeerTextChanged;
-            _btnProbe = _cardPeer.Probe;
-            _btnScan = _cardPeer.Scan;
-            _btnProbe.Click += OnProbeClick;
-            _btnScan.Click += OnScanClick;
 
             // 会议室
             _txtRoomPort = _cardRoom.Port;
@@ -233,8 +218,8 @@ namespace LanTalk
             _btnAddManual.Click += OnAddManualClick;
 
             // 状态
-            _lblState = _cardMembers.Status;
-            _lblPeerState = _cardMembers.PeerState;
+            _lblState = _cardMembers.Head.Title;
+            _lblPeerState = _cardMembers.Head.Sub;
 
             // 电平
             _pbIn = _cardMeter.In;
@@ -482,8 +467,6 @@ namespace LanTalk
         private void ApplyArgsToUi()
         {
             _txtLocalPort.Text = _args.LocalPort.ToString();
-            _txtPeerPort.Text = _args.PeerPort.ToString();
-            _txtPeerIp.Text = _args.PeerIp == null ? "" : _args.PeerIp;
             if (_args.Codec == VoiceCodec.MuLaw) _cmbCodec.SelectedIndex = 1;
             if (_args.AutoAnswer) _chkAutoAnswer.Checked = true;
         }
@@ -602,7 +585,6 @@ namespace LanTalk
                 return;
             }
 
-            _net.PeerDiscovered += OnPeerDiscovered;
 
             // 一对一和会议共用同一条音频通道（同一套设备、编码、混音器）
             _audio = new AudioPath(_net, SelectedCodec(), Rate, FrameMs, InputFactory(), OutputFactory());
@@ -631,7 +613,6 @@ namespace LanTalk
             _lblLocalHint.Text = "监听 " + _net.LocalEndPointText;
             _lblLocalHint.ForeColor = Theme.Accent;
             Log.Write("监听已就绪：" + _net.LocalEndPointText + "（一对一模式下对方要连的就是这个地址）");
-            UpdatePeerRemote();
         }
 
         private void SyncDenoiseCombo(DenoiseLevel lv)
@@ -698,7 +679,6 @@ namespace LanTalk
         private void ApplyWay(bool log)
         {
             bool room = RoomMode;
-            if (_cardPeer != null) _cardPeer.Visible = !room;
             if (_cardRoom != null) _cardRoom.Visible = room;
 
 
@@ -1080,109 +1060,6 @@ namespace LanTalk
 
         // ================= 呼叫操作 =================
 
-        private bool ParsePeer(out string ip, out int port)
-        {
-            ip = _txtPeerIp.Text.Trim();
-            port = 47800;
-            int.TryParse(_txtPeerPort.Text.Trim(), out port);
-            if (port <= 0 || port > 65535) port = 47800;
-            IPAddress a;
-            if (ip.Length == 0 || !IPAddress.TryParse(ip, out a))
-            {
-                Log.Write("「对方 IP」不是合法地址，请填写形如 192.168.1.23 的地址。");
-                return false;
-            }
-            return true;
-        }
-
-        private void UpdatePeerRemote()
-        {
-            if (_net == null) return;
-            string ip;
-            int port;
-            if (!ParsePeer(out ip, out port))
-            {
-                _net.ClearPeers();
-                return;
-            }
-            _net.SetRemote(ip, port);
-        }
-
-        private void OnPeerTextChanged(object sender, EventArgs e)
-        {
-            UpdatePeerRemote();
-        }
-
-
-        private void OnProbeClick(object sender, EventArgs e)
-        {
-            string ip;
-            int port;
-            if (!ParsePeer(out ip, out port)) return;
-            UpdatePeerRemote();
-
-            _btnProbe.Enabled = false;
-            Log.Write("正在向 " + ip + ":" + port + " 发送 5 个探测包（对方需已运行本程序并监听该端口）…");
-            Thread t = new Thread(delegate()
-            {
-                for (int i = 0; i < 5; i++)
-                {
-                    try { _net.SendPing(); } catch { }
-                    Thread.Sleep(200);
-                }
-                Thread.Sleep(400);
-                double rtt = _net.RttMs;
-                string msg;
-                if (rtt >= 0)
-                {
-                    msg = "连通正常：往返时延 " + rtt.ToString("F2") + " ms，对方在线。";
-                }
-                else
-                {
-                    msg = "没有收到回应。请检查：① 对方程序是否在运行、端口是否一致；② Windows 防火墙是否放行（见 README 的放行脚本）；③ ping 是否真的通。";
-                }
-                Log.Write(msg);
-                try { BeginInvoke(new Action(delegate() { _btnProbe.Enabled = true; })); }
-                catch { }
-            });
-            t.IsBackground = true;
-            t.Start();
-        }
-
-        private void OnScanClick(object sender, EventArgs e)
-        {
-            if (_net == null) return;
-            Log.Write("正在广播搜索局域网内的 LanTalk（约 6 秒）…");
-            _btnScan.Enabled = false;
-            _net.StartDiscovery(_myName, 1500);
-            Thread t = new Thread(delegate()
-            {
-                Thread.Sleep(6000);
-                try { _net.StopDiscovery(); } catch { }
-                try { BeginInvoke(new Action(delegate() { _btnScan.Enabled = true; })); }
-                catch { }
-            });
-            t.IsBackground = true;
-            t.Start();
-        }
-
-        private void OnPeerDiscovered(string name, IPEndPoint ep)
-        {
-            Log.Write("发现同伴：" + name + "  " + ep.Address + ":" + ep.Port);
-            try
-            {
-                BeginInvoke(new Action(delegate()
-                {
-                    if (_txtPeerIp.Text.Trim().Length == 0)
-                    {
-                        _txtPeerIp.Text = ep.Address.ToString();
-                        _txtPeerPort.Text = ep.Port.ToString();
-                        Log.Write("已自动填入对方地址。");
-                    }
-                }));
-            }
-            catch { }
-        }
 
         // ================= 按键说话 =================
 
@@ -1312,8 +1189,6 @@ namespace LanTalk
                 _btnLeave.Enabled = joined;
                 _btnAddManual.Enabled = joined;
 
-                _lblPresence.Text = joined ? ("会议中 " + _conference.MemberCount + " 人") : "未加入会议";
-                _lblPresence.ForeColor = joined ? Theme.Accent : Theme.TextMuted;
 
         }
 
