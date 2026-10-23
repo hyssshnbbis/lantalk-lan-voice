@@ -1224,6 +1224,8 @@ Log.Write("降噪引擎 " + (_args.UseNsEngine ? "WebRTC NS" : "轻量版"));
         {
             int v = _trkMicGain.Value;
             _lblMicGainVal.Text = v + "%";
+            // 超过 200% 会把噪声一起放大、还容易削顶，标黄提醒一下
+            _lblMicGainVal.ForeColor = v > 200 ? Theme.Warn : Theme.TextSecondary;
             Profile.MicGain = v;
             if (_audio != null) _audio.MicGainPercent = Profile.MicGain;
         }

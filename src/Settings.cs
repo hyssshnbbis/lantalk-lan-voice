@@ -174,6 +174,7 @@ namespace LanTalk
             Mode = new ModeCard(442, 18);
             Mode.MicGain.Value = Profile.MicGain;
             Mode.MicGainVal.Text = Profile.MicGain + "%";
+            if (Profile.MicGain > 200) Mode.MicGainVal.ForeColor = Theme.Warn;
             // 噪声处理：卡片本身在 Cards.cs 的 NoiseCard 里，这里只负责接线
             Noise = new NoiseCard(18, 402);      // 通话模式卡变高了，噪声卡跟着下移
             Noise.Hum.SetCheckedSilently(Profile.HumFilter);
