@@ -775,17 +775,18 @@ Log.Write("降噪引擎 " + (_args.UseNsEngine ? "WebRTC NS" : "轻量版"));
             DarkMenu.Apply(menu);
             menu.MinimumSize = new Size(240, 0);
 
-            // 标题行做得像卡片的角标：小字、灰、不要抢戏
-            ToolStripLabel head = new ToolStripLabel(title);
-            head.ForeColor = Theme.TextMuted;
+            // 标题行：用禁用的菜单项而不是 ToolStripLabel——
+            // Label 的文字缩进和菜单项不是同一个基准，三行会错开一截。
+            ToolStripMenuItem head = new ToolStripMenuItem(title);
+            head.Enabled = false;
             head.Font = Theme.FontSmall;
-            head.Padding = new Padding(12, 4, 12, 6);
+            head.Padding = new Padding(DarkMenu.TextPad, 4, DarkMenu.TextPad, 6);
             menu.Items.Add(head);
             menu.Items.Add(new ToolStripSeparator());
 
             // 文本跟着状态走：已静音就显示「解除静音」，否则显示「静音」
             ToolStripMenuItem mute = new ToolStripMenuItem(m.Muted ? "解除静音" : "静音");
-            mute.Padding = new Padding(12, 5, 12, 5);
+            mute.Padding = new Padding(DarkMenu.TextPad + 2, 5, DarkMenu.TextPad, 5);
             mute.Click += delegate
             {
                 if (_conference == null) return;
@@ -797,10 +798,10 @@ Log.Write("降噪引擎 " + (_args.UseNsEngine ? "WebRTC NS" : "轻量版"));
 
             menu.Items.Add(new ToolStripSeparator());
 
-            ToolStripLabel volLabel = new ToolStripLabel("用户音量   " + m.Volume + "%");
-            volLabel.ForeColor = Theme.TextMuted;
+            ToolStripMenuItem volLabel = new ToolStripMenuItem("用户音量   " + m.Volume + "%");
+            volLabel.Enabled = false;
             volLabel.Font = Theme.FontSmall;
-            volLabel.Padding = new Padding(12, 6, 12, 2);
+            volLabel.Padding = new Padding(DarkMenu.TextPad, 6, DarkMenu.TextPad, 2);
             menu.Items.Add(volLabel);
 
             DarkSlider slider = new DarkSlider();

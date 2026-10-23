@@ -1274,9 +1274,11 @@ namespace LanTalk
         public static readonly Color Bg = Theme.CardBg;          // 和卡片一致，滑块放进去才不会出现色块
         public static readonly Color Border = Theme.CardBorder;
         public static readonly Color Line = Color.FromArgb(54, 54, 54);
-        public static readonly Color Hover = Color.FromArgb(46, 58, 48);    // 与列表选中行同色
-        public static readonly Color Pressed = Color.FromArgb(52, 66, 55);
+        public static readonly Color Hover = Color.FromArgb(50, 50, 50);    // 中性灰，别用品牌绿
+        public static readonly Color Pressed = Color.FromArgb(58, 58, 58);
         public const int RadiusLogical = 8;
+        /// <summary>行内文字的左右缩进：标题、菜单项、说明行都用它，三行才对得齐。</summary>
+        public const int TextPad = 14;
 
         /// <summary>把一个 ContextMenuStrip 变成统一深色样式（大小、圆角会跟着菜单尺寸重算）。</summary>
         public static void Apply(ContextMenuStrip menu)
@@ -1330,12 +1332,15 @@ namespace LanTalk
         {
             if (!e.Item.Selected && !e.Item.Pressed) return;
             Graphics g = e.Graphics;
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            Rectangle r = new Rectangle(4, 0, Math.Max(2, e.Item.Width - 8), e.Item.Height);
-            int rad = Theme.Radius(e.ToolStrip, 4);
-            using (GraphicsPath p = Theme.RoundRect(new Rectangle(r.X, r.Y, Math.Max(2, r.Width - 1), Math.Max(2, r.Height - 1)), rad))
+            // 横带铺满整行：左右两端贴着菜单边，文字才不会被挤得和别的行对不齐
             using (SolidBrush b = new SolidBrush(e.Item.Pressed ? DarkMenu.Pressed : DarkMenu.Hover))
-                g.FillPath(b, p);
+                g.FillRectangle(b, new Rectangle(0, 0, e.Item.Width, e.Item.Height));
+        }
+
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        {
+            e.TextColor = e.Item.Enabled ? Theme.TextPrimary : Theme.TextMuted;
+            base.OnRenderItemText(e);
         }
 
         protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
