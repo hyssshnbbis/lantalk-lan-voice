@@ -1,4 +1,4 @@
-﻿// SelfTest.cs —— 自检（设备 / 编解码 / 抖动缓冲 / UDP 协议 / 端到端音频）与无界面运行模式
+// SelfTest.cs —— 自检（设备 / 编解码 / 抖动缓冲 / UDP 协议 / 端到端音频）与无界面运行模式
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -1617,6 +1617,9 @@ namespace LanTalk
                 // 否则锯齿波会被当成工频与冲击而改动，测的就不是编码链路了。
                 ap.HumFilter = false;
                 ap.ClickFilter = false;
+                // 耳返必须在这种"两个开关都关"的情况下也能工作：
+                // 曾经 ApplyHumFix 在开头就 return，把耳返一起挡掉了，界面开着耳返却一点声音都没有。
+                ap.Sidetone = true;
 
                 long total = 0, match = 0, frames = 0;
                 long n0 = -1;   // seq=0 帧第一个样本对应的音源样本号（相位标定）
@@ -1665,11 +1668,12 @@ namespace LanTalk
                 ap.Start(true);
                 Thread.Sleep(1500);
                 long sent = ap.SentFrames;
+                long mon = ap.MonitorPushed;
                 ap.Stop();
 
                 string detail = "采集 " + sent + " 帧，校验 " + frames + " 帧 / " + total +
-                                " 样本，一致 " + match + "；" + probe;
-                if (frames >= 30 && total > 0 && match == total) T.Ok("codec_path_pattern", detail);
+                                " 样本，一致 " + match + "；耳返样本 " + mon + "；" + probe;
+                if (frames >= 30 && total > 0 && match == total && mon > 0) T.Ok("codec_path_pattern", detail);
                 else T.Bad("codec_path_pattern", detail);
             }
             catch (Exception ex)

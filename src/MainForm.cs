@@ -1312,6 +1312,12 @@ Log.Write("降噪引擎 " + (_args.UseNsEngine ? "WebRTC NS" : "轻量版"));
             int outLvl = _audio.OutputLevel;
             _pbIn.Value = inLvl > 100 ? 100 : inLvl;
             _pbOut.Value = outLvl > 100 ? 100 : outLvl;
+            // 右边那两个百分比以前从来没更新过，一直挂 0%（只有进度条在动）
+            if (_cardMeter != null)
+            {
+                _cardMeter.InPct.Text = _pbIn.Value + "%";
+                _cardMeter.OutPct.Text = _pbOut.Value + "%";
+            }
 
             UdpPeer n = _net;
             if (n == null) return;

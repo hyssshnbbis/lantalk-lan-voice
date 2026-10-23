@@ -271,6 +271,8 @@ namespace LanTalk
         private readonly object _monLock = new object();
 
         /// <summary>耳返入队。跟不上播放（设备卡顿）时丢最旧的，宁可断续也不让延迟越积越大。</summary>
+        public long MonitorPushed;   // 已送进混音器的耳返样本数（自检用）
+
         public void PushMonitor(short[] src, int len)
         {
             if (src == null || len <= 0) return;
@@ -285,6 +287,7 @@ namespace LanTalk
                 }
                 for (int i = 0; i < len; i++) _mon[(_monRead + _monCount + i) % _mon.Length] = src[i];
                 _monCount += len;
+                MonitorPushed += len;
             }
         }
 
@@ -449,6 +452,9 @@ namespace LanTalk
 
         public HumNotch Hum { get { return _humNotch; } }
         public ClickGuard Click { get { return _clickGuard; } }
+
+        /// <summary>已送进混音器的耳返样本数（自检用它确认耳返真的在工作）。</summary>
+        public long MonitorPushed { get { Mixer m = _mixer; return m == null ? 0 : m.MonitorPushed; } }
         private bool _useNsEngine = true;
 
         private volatile bool _micMuted;
@@ -758,9 +764,13 @@ namespace LanTalk
         /// <summary>电流声陷波 + 键盘瞬态抑制（原地修改 PCM16 字节流）。</summary>
         private void ApplyHumFix(byte[] pcm, int len)
         {
-            if (!HumFilter && !ClickFilter) return;
             int n = len / 2;
             if (n <= 0) return;
+
+            bool fx = HumFilter || ClickFilter;
+            bool monitor = Sidetone && _mixer != null;
+            // 既不处理也不耳返：原样直通，连搬运都省了
+            if (!fx && !monitor) return;
 
             if (_fxBuf == null || _fxBuf.Length < n) _fxBuf = new short[n];
             for (int i = 0; i < n; i++) _fxBuf[i] = (short)(pcm[i * 2] | (pcm[i * 2 + 1] << 8));
@@ -771,10 +781,13 @@ namespace LanTalk
                 _humNotch.Process(_fxBuf, n);
             }
             if (ClickFilter) _clickGuard.Process(_fxBuf, n);
-            if (ClickFilter) _clickGuard.Process(_fxBuf, n);
 
-            // 耳返取的是"处理之后"的信号，这样听到的就是对方会听到的
-            if (Sidetone && _mixer != null) _mixer.PushMonitor(_fxBuf, n);
+            // 耳返取的是"处理之后"的信号，这样听到的就是对方会听到的。
+            // 注意这是在 !fx 的早退之后：两个开关都关时耳返照样要出声（曾经因为上面的
+            // 早退把这两件事捆在一起，导致"耳返开着但听不见"）。
+            if (monitor) _mixer.PushMonitor(_fxBuf, n);
+
+            if (!fx) return;   // 只做耳返时不要让 PCM 走一遍无用往返，保证 bit-exact 直通
 
             for (int i = 0; i < n; i++)
             {
