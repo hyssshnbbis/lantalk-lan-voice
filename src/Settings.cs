@@ -1,4 +1,4 @@
-﻿// Settings.cs —— 设置页
+// Settings.cs —— 设置页
 //
 // 参照用户给的参考图：左边一条分组导航（顶部「返回」，下面按组列条目），
 // 右边是内容区。内容是"页面"（Panel），切导航就切页面。
@@ -99,7 +99,7 @@ namespace LanTalk
     /// <summary>设置页：左导航 + 右内容。</summary>
     internal sealed class SettingsPanel : Panel
     {
-        public const string AppVersion = "1.3.2";
+        public const string AppVersion = AppPaths.IsPreview ? "1.4.0" : "1.3.2";
         public const string ReleasesUrl = "https://github.com/hyssshnbbis/lantalk-lan-voice/releases";
 
         public readonly DeviceCard Device;
