@@ -491,6 +491,7 @@ namespace LanTalk
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
+            DarkChrome.DarkScrollbars(this);   // 滚动条也走深色，别在深色列表里留一条白杠
             SizeLastColumn();
         }
 

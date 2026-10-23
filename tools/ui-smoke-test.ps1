@@ -186,11 +186,11 @@ try {
     $twoMembers = $false
     for ($i = 0; $i -lt 40; $i++) {
         Start-Sleep -Milliseconds 250
-        if ([Ui]::HasText($h2, '成员 2 人')) { $twoMembers = $true; break }
+        if ([Ui]::HasText($h2, '成员 3 人')) { $twoMembers = $true; break }
     }
     [void][Ui]::SetForegroundWindow($h2); Start-Sleep -Milliseconds 400
     Save-Shot $h2 (Join-Path $outPath 'ui-conference.png')
-    Check 'room_two_members' $twoMembers '界面显示「成员 2 人」'
+    Check 'room_two_members' $twoMembers '界面显示「成员 3 人」（含界面自己）'
 
     $m1.WaitForExit(); $m2.WaitForExit()
     Start-Sleep -Milliseconds 500

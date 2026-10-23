@@ -482,56 +482,223 @@ namespace LanTalk
 
     // =========================== 会议成员 ===========================
     /// <summary>
-    /// 成员列表行：圆形头像（名字首字）+ 名字 + 右侧状态点。
-    /// 状态色：绿=正在说话，橙=已静音，灰=在线。
+    /// 成员看板里一张卡需要的数据。渲染层只认这个结构，不直接碰 Conference.Member——
+    /// 这样卡片控件不依赖网络层，没开会时也能画出空状态。
     /// </summary>
-    /// <summary>成员卡片容器：自动换行排列，超高就竖向滚动。</summary>
+    internal struct MemberView
+    {
+        public string Key;          // 身份：自己固定是 MemberBoardCard.SelfKey，别人是 Member.Key
+        public string Name;
+        public string Sub;          // 副标题，例如"在本房间 12 分钟"
+        public bool IsSelf;
+        public bool Muted;          // 自己=闭麦；别人=我这边把他静音了
+        public bool SpeakerMuted;   // 只对自己的卡片有意义
+        public int Level;           // 0..100 说话电平
+        public int Volume;          // 别人的单独音量 0..100
+        public Image Avatar;
+    }
+
+    /// <summary>
+    /// 成员卡片容器：自动换行排列，超出可视区就竖向滚动。
+    ///
+    /// 同一个 Key 的卡片会被复用（只更新字段），绝不重建——否则每 500ms 刷新一次
+    /// 就会把鼠标悬停状态、已解码的头像全丢掉，还平白制造一批控件句柄。
+    /// </summary>
     internal sealed class MemberCardPanel : Panel
     {
+        /// <summary>卡片之间的间距（96 DPI 逻辑值）。</summary>
+        public const int GapX = 10;
+        public const int GapY = 8;
+
+        /// <summary>看板底色：比卡片暗一档，卡片才有浮起来的感觉。</summary>
+        public static readonly Color PanelBg = Color.FromArgb(30, 30, 30);
+
+        /// <summary>点图标或右键：(成员 Key, 动作)。动作取值 mic|speaker|leave|volume|mute|menu。</summary>
+        public event Action<string, string> IconClicked;
+
+        /// <summary>一个人都没有时显示的提示。</summary>
+        public string EmptyText = "加入会议后，这里会显示房间里的成员";
+
+        private readonly Dictionary<string, MemberCard> _cards = new Dictionary<string, MemberCard>();
+        private readonly List<string> _order = new List<string>();
+
         public MemberCardPanel()
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint
                    | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
             AutoScroll = true;
-            BackColor = Color.Transparent;
+            BackColor = PanelBg;
         }
 
-        /// <summary>清空并重建卡片，返回新建的卡片列表。</summary>
-        public System.Collections.Generic.List<MemberCard> Rebuild(System.Collections.Generic.IList<MemberCard> items)
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            // 系统滚动条默认是浅色的，深色界面里像贴了一条白胶布
+            DarkChrome.DarkScrollbars(this);
+        }
+
+        /// <summary>按给定数据刷新看板：增删卡片、更新字段、重新排版。</summary>
+        public void SetMembers(List<MemberView> rows)
         {
             SuspendLayout();
             try
             {
-                for (int i = Controls.Count - 1; i >= 0; i--) { Controls[i].Dispose(); }
-                int gap = 10;
-                int avail = Width - SystemInformation.VerticalScrollBarWidth - gap;
-                int perRow = Math.Max(1, (avail + gap) / (MemberCard.CardW + gap));
-                for (int i = 0; i < items.Count; i++)
+                _order.Clear();
+                HashSet<string> keep = new HashSet<string>();
+
+                for (int i = 0; i < rows.Count; i++)
                 {
-                    MemberCard c = items[i];
-                    int col = i % perRow, row = i / perRow;
-                    c.SetBounds(gap + col * (MemberCard.CardW + gap), gap + row * (MemberCard.CardH + gap),
-                                MemberCard.CardW, MemberCard.CardH);
-                    Controls.Add(c);
+                    string key = rows[i].Key == null ? "" : rows[i].Key;
+                    MemberCard c;
+                    if (!_cards.TryGetValue(key, out c))
+                    {
+                        c = new MemberCard();
+                        c.IconClicked += OnCardIcon;
+                        _cards[key] = c;
+                        Controls.Add(c);
+                    }
+                    c.Apply(rows[i]);
+                    _order.Add(key);
+                    keep.Add(key);
                 }
+
+                // 已经离开的人：删卡并释放（Bitmap 引用由调用方的头像缓存持有，这里不碰）
+                List<string> gone = new List<string>();
+                foreach (string key in _cards.Keys) if (!keep.Contains(key)) gone.Add(key);
+                for (int i = 0; i < gone.Count; i++)
+                {
+                    MemberCard dead = _cards[gone[i]];
+                    _cards.Remove(gone[i]);
+                    Controls.Remove(dead);
+                    dead.Dispose();
+                }
+
+                Relayout();
             }
             finally { ResumeLayout(); }
-            return null;
+        }
+
+        private void OnCardIcon(string key, string action)
+        {
+            Action<string, string> h = IconClicked;
+            if (h != null) h(key, action);
+        }
+
+        /// <summary>当前 DPI 相对 96 的倍数。卡片按 96 逻辑值画好再整体缩放，排位置也要用同一个倍数。</summary>
+        private float DpiFactor()
+        {
+            try { using (Graphics g = CreateGraphics()) return g.DpiX / 96f; }
+            catch { return 1f; }
+        }
+
+        /// <summary>重排所有卡片：每行居中、自动换行，并把滚动范围算准。</summary>
+        public void Relayout()
+        {
+            float k = DpiFactor();
+            int cw = Math.Max(32, (int)Math.Round(MemberCard.CardW * k));
+            int ch = Math.Max(32, (int)Math.Round(MemberCard.CardH * k));
+            int gx = Math.Max(2, (int)Math.Round(GapX * k));
+            int gy = Math.Max(1, (int)Math.Round(GapY * k));
+
+            // 先按"已经出现滚动条"算可用宽度，避免滚动条一出现就换行、换完又消失的抖动
+            int avail = ClientSize.Width - SystemInformation.VerticalScrollBarWidth;
+            int perRow = Math.Max(1, (avail - gx) / (cw + gx));
+            int rows = (int)Math.Ceiling(_order.Count / (double)perRow);
+            int contentH = rows == 0 ? 0 : gy + rows * ch + (rows - 1) * gy + gy;
+
+            // 已经滚过的距离。AutoScroll 是靠移动子控件实现的，所以重排时必须把它加回去，
+            // 否则每 500ms 刷新一次就把滚动位置"拉回顶部"（踩过）。
+            int scrolled = AutoScrollPosition.Y;
+
+            for (int i = 0; i < _order.Count; i++)
+            {
+                MemberCard c;
+                if (!_cards.TryGetValue(_order[i], out c)) continue;
+
+                int row = i / perRow, col = i % perRow;
+                // 一律贴左边排，人多了就往下换行；滚动条由 AutoScroll 负责
+                c.SetBounds(col * (cw + gx), gy + row * (ch + gy) + scrolled, cw, ch);
+            }
+
+            if (AutoScrollMinSize.Height != contentH) AutoScrollMinSize = new Size(0, contentH);
+            Invalidate();
+        }
+
+        /// <summary>滚动看板（窗体把滚轮事件转过来时调）。dy 为正向下滚。</summary>
+        public void ScrollBy(int dy)
+        {
+            int max = Math.Max(0, AutoScrollMinSize.Height - ClientSize.Height);
+            if (max <= 0) return;
+            int cur = -AutoScrollPosition.Y;
+            int next = cur + dy;
+            if (next < 0) next = 0;
+            if (next > max) next = max;
+            if (next == cur) return;
+            AutoScrollPosition = new Point(0, next);
+            Invalidate();
+        }
+
+        /// <summary>
+        /// 滚轮不在卡片上处理：鼠标停在卡片里时消息要能继续冒泡到窗体，
+        /// 由窗体统一判断"指针在不在看板上"再滚。否则停在卡上就滚不动。
+        /// </summary>
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            // 故意不调用 base
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            if (_order.Count > 0) Relayout();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            Graphics g = e.Graphics;
+            using (SolidBrush bg = new SolidBrush(BackColor)) g.FillRectangle(bg, ClientRectangle);
+            if (_order.Count > 0 || string.IsNullOrEmpty(EmptyText)) return;
+
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            using (SolidBrush b = new SolidBrush(Theme.TextMuted))
+            using (StringFormat sf = new StringFormat())
+            {
+                sf.Alignment = StringAlignment.Center;
+                sf.LineAlignment = StringAlignment.Center;
+                g.DrawString(EmptyText, Theme.FontSmall, b, ClientRectangle, sf);
+            }
         }
     }
+
     /// <summary>
     /// 大头像成员卡：圆角大图 + 名字 + 副标题 + 一行图标。
     ///
-    /// 只包含本项目真正有的功能：
     ///   自己卡片  闭麦 / 静音 / 退出
     ///   别人卡片  音量 / 静音
+    ///
+    /// 说话时头像外圈跟着电平发绿光（闭麦时是红圈）。
     /// 表情包、共享设备音频、屏幕共享这些没有的功能不做。
-    /// 说话时头像外圈跟着电平发绿光。
     /// </summary>
     internal sealed class MemberCard : Control
     {
+        /// <summary>卡片逻辑尺寸（96 DPI）。控件实际尺寸由 DPI 放大，绘制时整体缩放。</summary>
         public const int CardW = 176;
         public const int CardH = 232;
+
+        private const int Pad = 14;          // 卡片内边距
+        private const int Av = 148;          // 头像边长
+        private const int NameY = 168;       // 名字
+        private const int SubY = 189;        // 副标题
+        private const int IconY = 206;       // 图标行
+        private const int IconH = 24;
+        private const int IconW = 34;
+        private const int IconGap = 8;
+        private const int CardRadius = 12;
+        private const int AvatarRadius = 16;
+
+        private static readonly string[] SelfIcons = new string[] { "mic", "speaker", "leave" };
+        private static readonly string[] PeerIcons = new string[] { "volume", "mute" };
 
         public string MemberKey = "";
         public string DisplayName = "";
@@ -539,139 +706,264 @@ namespace LanTalk
         public bool IsSelf;
         public bool Muted;
         public bool SpeakerMuted;
-        public int Level;          // 0..100，说话电平
+        public int Level;
         public int Volume = 100;
         public Image Avatar;
 
-        /// <summary>点图标时抛出：mic / speaker / leave / menu。</summary>
+        /// <summary>点图标或右键：(成员 Key, 动作)。</summary>
         public event Action<string, string> IconClicked;
 
-        private const int Pad = 14;
-        private const int Av = 148;
-        private static readonly Rectangle RAv = new Rectangle(Pad, Pad, Av, Av);
-        private static readonly Rectangle RIcons = new Rectangle(Pad, 206, Av, 24);
-        private string _hot = "";
+        private string _hot = "";    // 鼠标悬停在哪个图标上
+        private bool _hotCard;       // 鼠标是否在卡片里（边框提亮）
 
         public MemberCard()
         {
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint
                    | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            BackColor = MemberCardPanel.PanelBg;   // 圆角外露出的底色必须和容器一致
             Size = new Size(CardW, CardH);
-            BackColor = Color.Transparent;
             Cursor = Cursors.Default;
         }
 
-        /// <summary>三/两个图标的位置（等分 Av 宽度）。</summary>
-        private Rectangle IconRect(int index, int total)
+        /// <summary>把新数据合进来；一个字段都没变就不重绘（500ms 刷一次，能省就省）。</summary>
+        public void Apply(MemberView v)
         {
-            int w = 34;
-            int gap = 8;
-            int totalW = total * w + (total - 1) * gap;
-            int x = RIcons.X + (RIcons.Width - totalW) / 2 + index * (w + gap);
-            return new Rectangle(x, RIcons.Y, w, 24);
+            bool dirty = false;
+            string key = v.Key == null ? "" : v.Key;
+            string name = v.Name == null ? "" : v.Name;
+            string sub = v.Sub == null ? "" : v.Sub;
+
+            if (MemberKey != key) { MemberKey = key; dirty = true; }
+            if (DisplayName != name) { DisplayName = name; dirty = true; }
+            if (Sub != sub) { Sub = sub; dirty = true; }
+            if (IsSelf != v.IsSelf) { IsSelf = v.IsSelf; dirty = true; }
+            if (Muted != v.Muted) { Muted = v.Muted; dirty = true; }
+            if (SpeakerMuted != v.SpeakerMuted) { SpeakerMuted = v.SpeakerMuted; dirty = true; }
+            if (Level != v.Level) { Level = v.Level; dirty = true; }
+            if (Volume != v.Volume) { Volume = v.Volume; dirty = true; }
+            if (Avatar != v.Avatar) { Avatar = v.Avatar; dirty = true; }
+
+            // 无障碍名：读屏软件和自动化测试靠它认出这是谁（卡片是自绘的，没有文字子控件）
+            string label = (string.IsNullOrEmpty(DisplayName) ? "(未命名)" : DisplayName) + (Muted ? "（已静音）" : "");
+            if (Text != label) Text = label;
+
+            if (dirty) Invalidate();
+        }
+
+        // ---------------- 几何 ----------------
+
+        private string[] Keys { get { return IsSelf ? SelfIcons : PeerIcons; } }
+
+        /// <summary>图标行等分头像宽度，第 index 个图标的位置（逻辑坐标）。</summary>
+        private static Rectangle IconRect(int index, int total)
+        {
+            int totalW = total * IconW + (total - 1) * IconGap;
+            int x = Pad + (Av - totalW) / 2 + index * (IconW + IconGap);
+            return new Rectangle(x, IconY, IconW, IconH);
+        }
+
+        private string HitIcon(Point logical)
+        {
+            string[] keys = Keys;
+            for (int i = 0; i < keys.Length; i++) if (IconRect(i, keys.Length).Contains(logical)) return keys[i];
+            return "";
+        }
+
+        /// <summary>把鼠标坐标换算回 96 DPI 的逻辑坐标。</summary>
+        private Point ToLogical(Point p)
+        {
+            float k = Width / (float)CardW;
+            if (k <= 0.05f) k = 1f;
+            return new Point((int)(p.X / k), (int)(p.Y / k));
+        }
+
+        // ---------------- 交互 ----------------
+
+        private void Fire(string action)
+        {
+            Action<string, string> h = IconClicked;
+            if (h != null) h(MemberKey, action);
         }
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
-            string hit = HitIcon(e.Location);
-            if (hit != _hot) { _hot = hit; Cursor = hit.Length > 0 ? Cursors.Hand : Cursors.Default; Invalidate(); }
+            string hit = HitIcon(ToLogical(e.Location));
+            if (hit == _hot && _hotCard) return;
+            _hot = hit;
+            _hotCard = true;
+            Cursor = hit.Length > 0 ? Cursors.Hand : Cursors.Default;
+            Invalidate();
         }
 
-        private string HitIcon(Point p)
+        protected override void OnMouseLeave(EventArgs e)
         {
-            string[] keys = IsSelf ? new string[] { "mic", "speaker", "leave" } : new string[] { "volume", "mute" };
-            for (int i = 0; i < keys.Length; i++) if (IconRect(i, keys.Length).Contains(p)) return keys[i];
-            return "";
+            base.OnMouseLeave(e);
+            if (_hot.Length == 0 && !_hotCard) return;
+            _hot = "";
+            _hotCard = false;
+            Cursor = Cursors.Default;
+            Invalidate();
         }
 
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
-            if (e.Button == MouseButtons.Right)
-            {
-                Action<string, string> h = IconClicked;
-                if (h != null) h(MemberKey, "menu");
-                return;
-            }
-            string key = HitIcon(e.Location);
-            if (key.Length == 0) return;
-            Action<string, string> cb = IconClicked;
-            if (cb != null) cb(MemberKey, key);
+            if (e.Button == MouseButtons.Right) { Fire("menu"); return; }
+            if (e.Button != MouseButtons.Left) return;
+            string key = HitIcon(ToLogical(e.Location));
+            if (key.Length > 0) Fire(key);
         }
+
+        // ---------------- 绘制 ----------------
 
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
-            using (GraphicsPath bg = Theme.RoundRect(new Rectangle(0, 0, Width - 1, Height - 1), 12))
-            using (SolidBrush br = new SolidBrush(Color.FromArgb(36, 36, 36)))
-                g.FillPath(br, bg);
+            // 先铺满底色：圆角外面露出来的部分必须和容器颜色一致，看起来才是圆角
+            using (SolidBrush bg = new SolidBrush(BackColor)) g.FillRectangle(bg, ClientRectangle);
 
-            // 头像：有图就画图，没有就画首字方块
-            using (GraphicsPath ap = Theme.RoundRect(RAv, 16))
+            float k = Width / (float)CardW;
+            if (k <= 0.05f) k = 1f;
+            GraphicsState st = g.Save();
+            try
             {
-                g.SetClip(ap);
-                if (Avatar != null)
+                g.ScaleTransform(k, k);
+                PaintCard(g);
+            }
+            finally { g.Restore(st); }
+        }
+
+        private void PaintCard(Graphics g)
+        {
+            // 卡片底：圆角 + 细描边，靠这两样和看板底色区分开
+            Rectangle card = new Rectangle(0, 0, CardW - 1, CardH - 1);
+            Color fill = _hotCard ? Color.FromArgb(45, 45, 45) : Color.FromArgb(40, 40, 40);
+            Color edge = _hotCard ? Color.FromArgb(68, 68, 68) : Color.FromArgb(52, 52, 52);
+            using (GraphicsPath p = Theme.RoundRect(card, CardRadius))
+            {
+                using (SolidBrush b = new SolidBrush(fill)) g.FillPath(b, p);
+                using (Pen pen = new Pen(edge, 1f)) g.DrawPath(pen, p);
+            }
+
+            // 头像：有图就把图居中裁成正方形贴上去，没图就画首字色块
+            Rectangle ar = new Rectangle(Pad, Pad, Av, Av);
+            using (GraphicsPath ap = Theme.RoundRect(ar, AvatarRadius))
+            {
+                if (Avatar != null && Avatar.Width > 1 && Avatar.Height > 1)
                 {
-                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                    g.DrawImage(Avatar, RAv);
+                    GraphicsState s = g.Save();
+                    try
+                    {
+                        g.SetClip(ap);
+                        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                        int side = Math.Min(Avatar.Width, Avatar.Height);
+                        int sx = (Avatar.Width - side) / 2, sy = (Avatar.Height - side) / 2;
+                        g.DrawImage(Avatar, ar, sx, sy, side, side, GraphicsUnit.Pixel);
+                    }
+                    finally { g.Restore(s); }
                 }
                 else
                 {
-                    using (SolidBrush br = new SolidBrush(AvatarColor(DisplayName)))
-                        g.FillPath(br, ap);
-                    string ch = string.IsNullOrEmpty(DisplayName) ? "?" : DisplayName.Substring(0, 1);
-                    using (SolidBrush fb = new SolidBrush(Color.FromArgb(240, 240, 240)))
-                    using (StringFormat sf = new StringFormat())
+                    using (SolidBrush b = new SolidBrush(AvatarColor(DisplayName))) g.FillPath(b, ap);
+                    using (SolidBrush fb = new SolidBrush(Color.FromArgb(242, 242, 242)))
+                    using (StringFormat sf = Centre())
+                    using (GraphicsPath ip = Theme.RoundRect(ar, AvatarRadius))
                     {
-                        sf.Alignment = StringAlignment.Center;
-                        sf.LineAlignment = StringAlignment.Center;
-                        using (Font f = new Font(Theme.FontBrand.FontFamily, 34F, FontStyle.Bold))
-                            g.DrawString(ch, f, fb, RAv, sf);
+                        g.SetClip(ip);
+                        g.DrawString(Initial(DisplayName), InitialFont, fb, ar, sf);
+                        g.ResetClip();
                     }
                 }
-                g.ResetClip();
             }
 
-            // 说话绿圈：按电平决定亮度
+            // 说话绿圈：闭麦时换成红圈，免得"闭着麦还在发光"
             if (Level > 4 && !Muted)
             {
-                int a = Math.Min(220, 60 + Level * 2);
-                using (Pen pen = new Pen(Color.FromArgb(a, Theme.Accent), 3f))
-                    g.DrawPath(pen, Theme.RoundRect(RAv, 16));
+                int alpha = Math.Min(230, 70 + Level * 2);
+                using (Pen pen = new Pen(Color.FromArgb(alpha, Theme.Accent), 3f))
+                using (GraphicsPath rp = Theme.RoundRect(ar, AvatarRadius))
+                    g.DrawPath(pen, rp);
+            }
+            else if (IsSelf && Muted)
+            {
+                using (Pen pen = new Pen(Color.FromArgb(140, Theme.Danger), 3f))
+                using (GraphicsPath rp = Theme.RoundRect(ar, AvatarRadius))
+                    g.DrawPath(pen, rp);
             }
 
             // 名字与副标题
-            using (SolidBrush tb = new SolidBrush(Theme.TextPrimary))
-                g.DrawString(string.IsNullOrEmpty(DisplayName) ? "(未命名)" : DisplayName, Theme.FontTitle,
-                             tb, new RectangleF(Pad, 168, Av, 20));
-            if (!string.IsNullOrEmpty(Sub))
-                using (SolidBrush sb = new SolidBrush(Theme.TextMuted))
-                    g.DrawString(Sub, Theme.FontSmall, sb, new RectangleF(Pad, 188, Av, 16));
+            using (StringFormat sf = SingleLine())
+            {
+                using (SolidBrush tb = new SolidBrush(Muted && IsSelf ? Theme.TextSecondary : Theme.TextPrimary))
+                    g.DrawString(string.IsNullOrEmpty(DisplayName) ? "(未命名)" : DisplayName,
+                                 Theme.FontTitle, tb, new RectangleF(Pad, NameY, Av, 20), sf);
+                if (!string.IsNullOrEmpty(Sub))
+                    using (SolidBrush sb = new SolidBrush(Theme.TextMuted))
+                        g.DrawString(Sub, Theme.FontSmall, sb, new RectangleF(Pad, SubY, Av, 16), sf);
+            }
 
-            // 图标行
-            string[] keys = IsSelf ? new string[] { "mic", "speaker", "leave" } : new string[] { "volume", "mute" };
+            // 图标行：关掉的一律红色，悬停变绿
+            string[] keys = Keys;
             for (int i = 0; i < keys.Length; i++)
             {
-                Rectangle r = IconRect(i, keys.Length);
-                bool on = keys[i] == "mic" ? !Muted : keys[i] == "speaker" ? !SpeakerMuted : true;
-                bool hot = _hot == keys[i];
-                Color c = keys[i] == "leave" ? Theme.Danger
-                        : (!on ? Theme.Danger : (hot ? Theme.Accent : Theme.TextSecondary));
-                DrawGlyph(g, keys[i], r, c);
+                string key = keys[i];
+                bool on = key == "mic" ? !Muted
+                        : key == "speaker" ? !SpeakerMuted
+                        : key == "mute" ? !Muted
+                        : true;
+                Color c = (key == "leave" || !on) ? Theme.Danger
+                        : (key == "volume" && Volume < 100) ? Theme.Warn
+                        : (_hot == key ? Theme.Accent : Theme.TextSecondary);
+                DrawGlyph(g, key, IconRect(i, keys.Length), c);
             }
         }
 
+        /// <summary>名字首字取色：同一个名字永远同一个颜色。</summary>
         private static Color AvatarColor(string name)
         {
             int h = 0;
             if (!string.IsNullOrEmpty(name)) for (int i = 0; i < name.Length; i++) h = h * 31 + name[i];
-            int r = 50 + Math.Abs(h) % 90, gg = 50 + Math.Abs(h / 7) % 90, b = 50 + Math.Abs(h / 13) % 90;
+            int r = 52 + Math.Abs(h) % 96, gg = 52 + Math.Abs(h / 7) % 96, b = 52 + Math.Abs(h / 13) % 96;
             return Color.FromArgb(r, gg, b);
         }
 
+        private static string Initial(string name)
+        {
+            return string.IsNullOrEmpty(name) ? "?" : name.Substring(0, 1);
+        }
+
+        private static StringFormat Centre()
+        {
+            StringFormat sf = new StringFormat();
+            sf.Alignment = StringAlignment.Center;
+            sf.LineAlignment = StringAlignment.Center;
+            return sf;
+        }
+
+        private static StringFormat SingleLine()
+        {
+            StringFormat sf = new StringFormat(StringFormatFlags.NoWrap);
+            sf.Trimming = StringTrimming.EllipsisCharacter;
+            return sf;
+        }
+
+        private static Font _initialFont;
+
+        /// <summary>首字大号字体，只建一次（每次绘制都 new Font 会拖慢刷新）。</summary>
+        private static Font InitialFont
+        {
+            get
+            {
+                if (_initialFont == null) _initialFont = new Font("Microsoft YaHei UI", 34F, FontStyle.Bold);
+                return _initialFont;
+            }
+        }
+
+        /// <summary>矢量图标：话筒 / 扬声器 / 音量 / 静音 / 退出。</summary>
         private static void DrawGlyph(Graphics g, string kind, Rectangle r, Color c)
         {
             int cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2;
@@ -711,6 +1003,11 @@ namespace LanTalk
             }
         }
     }
+
+    /// <summary>
+    /// 侧栏用的紧凑成员行：圆形头像（名字首字）+ 名字 + 右侧状态点。
+    /// 状态色：绿=正在说话，橙=已静音，灰=在线。
+    /// </summary>
     internal sealed class MemberListView : DarkListView
     {
         private int _hot = -1;   // 鼠标悬停在哪一行（-1 表示没有）
@@ -908,6 +1205,45 @@ namespace LanTalk
 
 
             Controls.Add(surface);
+        }
+
+        public void SetCount(int n)
+        {
+            _count.Text = n + " 人";
+        }
+    }
+
+    /// <summary>
+    /// 主区的成员看板：标题 + 人数，下面是一排会自己换行的大头像成员卡。
+    /// 侧栏的「会议成员」卡片仍在，负责紧凑名单和房间状态；这里负责看得清的大图。
+    /// </summary>
+    internal sealed class MemberBoardCard : CardBase
+    {
+        /// <summary>自己那张卡的 Key，和成员真实 Key（IP:端口）区分开。</summary>
+        public const string SelfKey = "self";
+
+        /// <summary>看板高度（96 DPI）：正好放得下一行卡片。</summary>
+        public const int BoardH = 286;
+
+        /// <summary>成员卡片容器。</summary>
+        public readonly MemberCardPanel Cards;
+
+        private readonly Label _count;
+
+        public MemberBoardCard(int x, int y, int w, int h) : base("会议成员", x, y, w, h)
+        {
+            _count = new Label();
+            _count.Text = "0 人";
+            _count.Font = Theme.FontSmall;
+            _count.ForeColor = Theme.TextMuted;
+            _count.BackColor = Color.Transparent;
+            _count.TextAlign = ContentAlignment.MiddleRight;
+            _count.SetBounds(w - PadH - 64, 8, 64, 18);
+            Controls.Add(_count);
+
+            Cards = new MemberCardPanel();
+            Cards.SetBounds(PadH, ContentTop, InnerW, h - ContentTop - 8);
+            Controls.Add(Cards);
         }
 
         public void SetCount(int n)

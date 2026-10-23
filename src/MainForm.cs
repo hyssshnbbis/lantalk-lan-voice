@@ -35,6 +35,7 @@ namespace LanTalk
         private LogCard _cardLog;
         private ChatCard _cardChat;
         private MembersCard _cardMembers;
+        private MemberBoardCard _cardBoard;
 
         // 下面全是"别名"：指向板块内部的控件，让既有逻辑可以照旧直接读写。
         // 本类不再创建、也不再给它们定坐标。
@@ -66,6 +67,9 @@ namespace LanTalk
 
         private TextBox _txtLog;
         private MemberListView _lstMembers;
+
+        // 成员卡头像缓存（按成员 Key）。真头像到了就换，不用每次重解码。
+        private readonly Dictionary<string, Image> _avatars = new Dictionary<string, Image>();
 
         private System.Windows.Forms.Timer _tick;
         private UdpPeer _net;
@@ -163,6 +167,7 @@ namespace LanTalk
             _cardRoom = new RoomCard(12, 262);
             _cardRoom.Visible = false;
 
+            // 侧栏保留紧凑的成员名单；主区另有一块大头像看板，两边数据同源。
             _cardMembers = new MembersCard(12, 440, 158);
 
             _cardMeter = new MeterCard(12, 604);
@@ -184,11 +189,12 @@ namespace LanTalk
             _main.SetBounds(278, 0, 842, 780);
             _main.BackColor = Theme.MainBg;
 
-            // 音频设备与通话模式已搬进设置页；这块空间之后给聊天框，先让日志占住
-            _cardChat = new ChatCard(12, 12, 818, 588);
+            // 主区从上到下：成员看板 → 聊天 → 运行日志
+            _cardBoard = new MemberBoardCard(12, 12, 818, MemberBoardCard.BoardH);
+            _cardChat = new ChatCard(12, 306, 818, 298);
             _cardLog = new LogCard(12, 612, 818, 156);
 
-            _main.Controls.AddRange(new Control[] { _cardChat, _cardLog });
+            _main.Controls.AddRange(new Control[] { _cardBoard, _cardChat, _cardLog });
         }
 
         // ==================== 把板块控件挂到别名 + 连事件 ====================
@@ -272,10 +278,17 @@ namespace LanTalk
             _cardChat.ImageSendRequested += delegate(byte[] j) { OnChatSendImage(j); };
 
             _txtLog = _cardLog.Log;
+            // 侧栏名单：右键弹成员小窗
             _lstMembers = _cardMembers.List;
             _lstMembers.MemberMenuRequested += ShowMemberMenu;
-            _lstMembers.SelectedIndexChanged += OnMemberSelected;
             _lstMembers.ForeColor = Theme.TextPrimary;
+
+            // 主区看板：点自己卡上的闭麦/静音/退出，点别人卡上的音量/静音，右键一律弹小窗。
+            // 能力全部复用已有链路（复选框、Conference、成员小窗），不另起一套状态。
+            _cardBoard.Cards.IconClicked += OnMemberIconClicked;
+
+            // 滚轮：指针落在看板上就滚看板（滚动条本身也照样能用）
+            MouseWheel += OnBoardMouseWheel;
         }
 
         /// <summary>
@@ -804,77 +817,181 @@ namespace LanTalk
             };
             menu.Items.Add(host);
 
-            menu.Show(_lstMembers, _lstMembers.PointToClient(Cursor.Position));
+            // 两种入口（侧栏名单右键、看板图标/右键）都弹同一个成员小窗，位置就在鼠标处
+            menu.Show(Cursor.Position);
         }
 
-        private void OnMemberSelected(object sender, EventArgs e)
+        /// <summary>
+        /// 成员卡上的图标点击。自己卡：闭麦 / 静音 / 退出；别人卡：音量 / 静音。
+        /// 这里只做映射——能力全部复用已有链路（复选框、Conference、成员小窗），不另起一套状态。
+        /// </summary>
+        private void OnMemberIconClicked(string key, string action)
         {
-            // 成员行不再有"静音选中/移除选中"按钮，音量和静音改由右键小窗单独设置。
-            // 这里保留空实现，因为 ListView 仍会派发 SelectedIndexChanged。
+            if (_conference == null || string.IsNullOrEmpty(key)) return;
+
+            if (key == MemberBoardCard.SelfKey)
+            {
+                switch (action)
+                {
+                    case "mic":
+                        // 改复选框即可：OnMuteChanged 会同步音频链路与顶栏胶囊
+                        if (_chkMicMute != null) _chkMicMute.Checked = !_chkMicMute.Checked;
+                        RefreshMemberList();
+                        break;
+                    case "speaker":
+                        if (_chkSpkMute != null) _chkSpkMute.Checked = !_chkSpkMute.Checked;
+                        RefreshMemberList();
+                        break;
+                    case "leave":
+                        OnLeaveClick(null, EventArgs.Empty);
+                        break;
+                }
+                return;
+            }
+
+            if (action == "mute")
+            {
+                Member m = _conference.MemberByKey(key);
+                if (m == null) return;
+                bool next = !m.Muted;
+                _conference.SetMemberMuted(key, next);
+                Log.Write((string.IsNullOrEmpty(m.Name) ? "该成员" : m.Name) + (next ? " 已被你静音。" : " 已解除静音。"));
+                RefreshMemberList();
+                return;
+            }
+
+            // volume / menu（右键）都交给成员小窗：那里能拉音量，也能静音
+            ShowMemberMenu(key);
         }
 
-        private string SelectedMemberKey()
-        {
-            if (_lstMembers == null || _lstMembers.SelectedItems.Count == 0) return "";
-            object tag = _lstMembers.SelectedItems[0].Tag;
-            return tag == null ? "" : tag.ToString();
-        }
-
-        private Member FindMember(string key)
-        {
-            if (_conference == null) return null;
-            Member[] ms = _conference.Members;
-            for (int i = 0; i < ms.Length; i++) if (ms[i].Key == key) return ms[i];
-            return null;
-        }
-
-        /// <summary>把成员列表刷到界面（保留当前选中项）。</summary>
+        /// <summary>把会议成员刷到看板上。自己永远排第一张卡，其余按名字排，免得每 500ms 跳序。</summary>
         private void RefreshMemberList()
         {
-            if (_lstMembers == null || _conference == null) return;
-            string keep = SelectedMemberKey();
+            if (_cardMembers == null || _conference == null) return;
 
-            _lstMembers.BeginUpdate();
-            try
+            bool joined = _conference.Joined;
+            // 人数口径含自己：看板上本来就有一张自己的卡
+            int total = joined ? _conference.MemberCount + 1 : 0;
+
+            List<MemberView> rows = new List<MemberView>();
+            if (joined)
             {
-                _lstMembers.Items.Clear();
+                int mins = (int)(_conference.JoinedSeconds / 60.0);
+                string dur = "在本房间 " + mins + " 分钟";
+
+                MemberView me = new MemberView();
+                me.Key = MemberBoardCard.SelfKey;
+                me.Name = _myName;
+                me.Sub = dur;
+                me.IsSelf = true;
+                me.Muted = _audio != null && _audio.MicMuted;
+                me.SpeakerMuted = _audio != null && _audio.SpeakerMuted;
+                me.Level = _audio != null ? _audio.InputLevel : 0;
+                me.Volume = 100;
+                me.Avatar = Profile.Avatar;
+                rows.Add(me);
+
                 Member[] ms = _conference.Members;
+                Array.Sort(ms, CompareMember);
                 for (int i = 0; i < ms.Length; i++)
                 {
                     Member m = ms[i];
-                    int lvl = m.Level;
-                    ListViewItem it = new ListViewItem(string.IsNullOrEmpty(m.Name) ? "(未命名)" : m.Name);
-                    it.SubItems.Add(m.Key);
-                    it.SubItems.Add(m.Muted ? "已静音" : (lvl >= 8 ? "正在说话" : "在线"));
-                    it.SubItems.Add(m.Received.ToString());
-                    it.Tag = m.Key;
-                    // 先用缓存里的头像顶上，真图到了再替换（省一次传输）
-                    if (!string.IsNullOrEmpty(m.ClientId) && !_cardMembers.List.Avatars.ContainsKey(m.Key))
-                    {
-                        Image cached = PeerStore.GetAvatar(m.ClientId);
-                        if (cached != null) _cardMembers.List.Avatars[m.Key] = cached;
-                    }
-                    if (m.Muted) it.ForeColor = Color.Gray;
-                    else if (lvl >= 8) it.ForeColor = Color.FromArgb(0, 120, 0);
-                    _lstMembers.Items.Add(it);
-                    if (m.Key == keep) it.Selected = true;
+                    MemberView v = new MemberView();
+                    v.Key = m.Key;
+                    v.Name = m.Name;
+                    v.Sub = dur;
+                    v.Muted = m.Muted;
+                    v.SpeakerMuted = false;
+                    v.Level = m.Level;
+                    v.Volume = m.Volume;
+                    v.Avatar = AvatarFor(m);
+                    rows.Add(v);
                 }
             }
-            finally { _lstMembers.EndUpdate(); }
+
+            // 主区看板：大卡片
+            _cardBoard.Cards.SetMembers(rows);
+            _cardBoard.SetCount(total);
+
+            // 侧栏名单：紧凑行，方便一眼扫过去
+            if (_lstMembers != null)
+            {
+                _lstMembers.BeginUpdate();
+                try
+                {
+                    _lstMembers.Items.Clear();
+                    for (int i = 0; i < rows.Count; i++)
+                    {
+                        MemberView v = rows[i];
+                        ListViewItem it = new ListViewItem(string.IsNullOrEmpty(v.Name) ? "(未命名)" : v.Name);
+                        it.SubItems.Add(v.IsSelf ? MemberBoardCard.SelfKey : v.Key);
+                        it.SubItems.Add(v.Muted ? "已静音" : (v.Level >= 8 ? "正在说话" : (v.IsSelf ? "我" : "在线")));
+                        it.Tag = v.IsSelf ? MemberBoardCard.SelfKey : v.Key;
+                        if (v.Muted) it.ForeColor = Color.Gray;
+                        else if (v.Level >= 8) it.ForeColor = Theme.Accent;
+                        if (v.Avatar != null && it.Tag != null) _lstMembers.Avatars[it.Tag.ToString()] = v.Avatar;
+                        _lstMembers.Items.Add(it);
+                    }
+                }
+                finally { _lstMembers.EndUpdate(); }
+            }
+
+            _cardMembers.SetCount(total);
 
             if (_lblRoomState != null)
             {
-                _lblRoomState.Text = _conference.Joined ? ("会议中 " + _conference.MemberCount + " 人") : "未加入";
-                _lblRoomState.ForeColor = _conference.Joined ? Theme.Accent : Theme.TextMuted;
+                _lblRoomState.Text = joined ? ("会议中 " + total + " 人") : "未加入";
+                _lblRoomState.ForeColor = joined ? Theme.Accent : Theme.TextMuted;
             }
-            if (_cardMembers != null) _cardMembers.SetCount(_conference.MemberCount);
-            OnMemberSelected(null, EventArgs.Empty);
-            if (_conference != null && _conference.Joined)
+
+            if (joined)
             {
                 // 有新人进来（或刚进房）就补发一次自己的头像
                 if (_conference.MemberCount > _lastMemberCount) PushMyAvatar();
                 _lastMemberCount = _conference.MemberCount;
             }
+            else
+            {
+                _lastMemberCount = 0;
+                _avatars.Clear();
+                if (_lstMembers != null) _lstMembers.Avatars.Clear();
+            }
+        }
+
+        /// <summary>
+        /// 成员看板的滚轮。滚轮消息会一路冒泡到窗体，这里判断指针是否落在看板上：
+        /// 落在就看板滚，不落在就交给原本该滚的地方（聊天、日志各管各的）。
+        /// </summary>
+        private void OnBoardMouseWheel(object sender, MouseEventArgs e)
+        {
+            if (_cardBoard == null) return;
+            Point p = _cardBoard.Cards.PointToClient(Cursor.Position);
+            if (!_cardBoard.Cards.ClientRectangle.Contains(p)) return;
+            _cardBoard.Cards.ScrollBy(-e.Delta * 60 / 120);
+        }
+        /// <summary>成员排序：按名字（没有名字就用 Key），保证刷新前后卡片顺序稳定。</summary>
+        private static int CompareMember(Member a, Member b)
+        {
+            string na = string.IsNullOrEmpty(a.Name) ? a.Key : a.Name;
+            string nb = string.IsNullOrEmpty(b.Name) ? b.Key : b.Name;
+            int c = string.Compare(na, nb, StringComparison.CurrentCulture);
+            if (c != 0) return c;
+            return string.CompareOrdinal(a.Key, b.Key);
+        }
+
+        /// <summary>取某个成员的头像：先看本次运行的缓存，再看「连接过的人」落盘缓存。</summary>
+        private Image AvatarFor(Member m)
+        {
+            if (m == null) return null;
+            Image cached;
+            if (_avatars.TryGetValue(m.Key, out cached) && cached != null) return cached;
+            try
+            {
+                Image disk = PeerStore.GetAvatar(m.ClientId);
+                if (disk != null) { _avatars[m.Key] = disk; return disk; }
+            }
+            catch { }
+            return null;
         }
 
 
@@ -1177,7 +1294,7 @@ namespace LanTalk
                 _lblState.ForeColor = joined ? Theme.Accent : Theme.Info;
 
                 string sub = joined
-                    ? ("房间号 " + _conference.RoomPort + "　成员 " + _conference.MemberCount + " 人")
+                    ? ("房间号 " + _conference.RoomPort + "　成员 " + (_conference.MemberCount + 1) + " 人")
                     : "填入房间号后点「加入会议」";
                 if (joined && _rdoPtt.Checked) sub += _pttHeld ? "　● 正在发送" : "　○ 按住空格或按钮说话";
                 _lblPeerState.Text = sub;
@@ -1237,7 +1354,7 @@ namespace LanTalk
         }
         // ==================== 头像 ====================
 
-        /// <summary>收到某个成员的头像，存进成员列表并重绘。</summary>
+        /// <summary>收到某个成员的头像，存进缓存并刷新看板（卡片会就地换图，不重建）。</summary>
         private void OnMemberAvatar(string key, byte[] jpeg)
         {
             try
@@ -1245,8 +1362,8 @@ namespace LanTalk
                 if (_cardMembers == null || string.IsNullOrEmpty(key)) return;
                 Bitmap b = ChatFeed.DecodeThumb(jpeg);
                 if (b == null) return;
-                _cardMembers.List.Avatars[key] = b;
-                _cardMembers.List.Invalidate();
+                _avatars[key] = b;
+                RefreshMemberList();
             }
             catch { }
         }
