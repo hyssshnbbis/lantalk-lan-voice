@@ -10,10 +10,10 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCopyright("Copyright © 2025")]
 // 测试版用独立版本号，便于在「详细信息」里一眼区分，也不会和正式版混淆
 #if PREVIEW
-[assembly: AssemblyVersion("1.5.0.0")]
-[assembly: AssemblyFileVersion("1.5.0.0")]
+[assembly: AssemblyVersion("1.5.1.0")]
+[assembly: AssemblyFileVersion("1.5.1.0")]
 #else
-[assembly: AssemblyVersion("1.5.0.0")]
-[assembly: AssemblyFileVersion("1.5.0.0")]
+[assembly: AssemblyVersion("1.5.1.0")]
+[assembly: AssemblyFileVersion("1.5.1.0")]
 #endif
 [assembly: ComVisible(false)]

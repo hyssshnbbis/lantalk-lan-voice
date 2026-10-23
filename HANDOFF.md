@@ -46,8 +46,9 @@
 | 1.4.0-beta | **已发布**（pre-release） | 噪声处理 + 耳返 + 成员右键小窗；协议与 1.3.2 一致 |
 | 1.4.0 | **已发布** | 成员看板 + 麦克风增益 + 音量条 + 耳返修复；自检 26/26，冒烟 6/6 |
 | 1.5.0 | **已发布** | 聊天记录可删/可清空 + 电平改满幅线性 + 头像修复；自检 26/26，冒烟 6/6 |
+| 1.5.1 | **已发布** | 单成员音量 >100% 修复 + 麦克风增益到 400% + SliderRow 公共控件；自检 26/26，冒烟 6/6 |
 
-正式版 exe 版本号 **1.5.0.0**（`AssemblyInfo.cs`）；测试版同样 1.5.0.0，靠「· 测试版」后缀与独立数据目录区分。
+正式版 exe 版本号 **1.5.1.0**（`AssemblyInfo.cs`）；测试版同样 1.5.1.0，靠「· 测试版」后缀与独立数据目录区分。
 
 ### 2.3 不要做这些
 
@@ -386,7 +387,7 @@ git tag -f v1.4.0 <sha>; git -c credential.helper= push $url refs/tags/v1.4.0
 接手后先跑这几条，确认环境正常：
 
 ```powershell
-.\build.ps1                                                      # 应输出 体积：385 KB、零警告
+.\build.ps1                                                      # 应输出 体积：386.5 KB、零警告
 .\dist\LanTalk.exe --selftest --log '.\dist\selftest.log'        # 应 pass=26 fail=0
 .\tools\ui-smoke-test.ps1                                        # 应 pass=6 fail=0
 ```
