@@ -99,7 +99,7 @@ namespace LanTalk
     /// <summary>设置页：左导航 + 右内容。</summary>
     internal sealed class SettingsPanel : Panel
     {
-        public const string AppVersion = "1.4.0";   // 1.4.0 起正式版和测试版同版本号，靠后缀区分
+        public const string AppVersion = "1.5.0";   // 1.4.0 起正式版和测试版同版本号，靠后缀区分
         public const string ReleasesUrl = "https://github.com/hyssshnbbis/lantalk-lan-voice/releases";
 
         public readonly DeviceCard Device;
