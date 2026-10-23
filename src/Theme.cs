@@ -1373,6 +1373,108 @@ namespace LanTalk
     /// 开关是"保持某个状态"。这里做成独立控件，Checked 表示状态，点击翻转。
     /// </summary>
     /// <summary>
+    /// 一行「标题 + 滑块 + 右侧百分比」。音量、麦克风增益这类都用它。
+    ///
+    /// 以前每处都是手搓 Caption + Value + DarkSlider 三件套，量程和"超过多少要标黄"
+    /// 散在各地；收成公共控件后，量程写在构造里、告警阈值只用一个属性。
+    /// 尺寸按 96 DPI 逻辑值给，由 MainForm.ApplyDpiScale 统一放大。
+    /// </summary>
+    internal sealed class SliderRow : Panel
+    {
+        private readonly Label _title;
+        private readonly Label _value;
+        private int _warnAbove = int.MaxValue;
+
+        public readonly DarkSlider Slider;
+
+        /// <summary>值变化（滑块拖动、点轨道、滚轮、赋 Value 都会触发）。</summary>
+        public event EventHandler ValueChanged;
+
+        public const int RowH = 52;      // 18(标题行) + 28(滑块) + 6
+        private const int TitleH = 18;
+        private const int SliderTop = 20;
+        private const int SliderH = 28;
+        private const int ValueW = 64;
+
+        public SliderRow(string title, int min, int max, int value) : this(title, min, max, value, 376) { }
+
+        public SliderRow(string title, int min, int max, int value, int width)
+        {
+            // 宽度在构造时就要定下来：子控件位置只在这里算一次，
+            // 之后由 MainForm.ApplyDpiScale 把整棵树等比放大。
+            // （踩过坑：如果在 OnResize 里按 Width 重算，DPI 放大后 Width 已是设备像素，
+            //   再减逻辑的 ValueW，数值标签会被挤到行外、看不见。）
+            Width = width > 40 ? width : 40;
+            Theme.InitFonts();
+            BackColor = Theme.CardBg;          // 和卡片同色，不做透明（透明底会被父容器底色带偏）
+
+            _title = new Label();
+            _title.Text = title ?? "";
+            _title.Font = Theme.FontUi;
+            _title.ForeColor = Theme.TextSecondary;
+            _title.BackColor = Theme.CardBg;
+            _title.SetBounds(0, 0, 200, TitleH);
+            Controls.Add(_title);
+
+            _value = new Label();
+            _value.Font = Theme.FontUi;
+            _value.ForeColor = Theme.TextSecondary;
+            _value.BackColor = Theme.CardBg;
+            _value.TextAlign = ContentAlignment.MiddleRight;
+            _value.SetBounds(0, 0, ValueW, TitleH);
+            Controls.Add(_value);
+
+            Slider = new DarkSlider();
+            Slider.BackColor = Theme.CardBg;
+            Slider.Minimum = min;
+            Slider.Maximum = max;
+            Slider.Value = value;
+            Slider.SetBounds(0, SliderTop, Width, SliderH);
+            _title.SetBounds(0, 0, Math.Max(60, Width - ValueW - 8), TitleH);
+            _value.SetBounds(Width - ValueW, 0, ValueW, TitleH);
+            Slider.ValueChanged += delegate
+            {
+                SyncLabel();
+                EventHandler h = ValueChanged;
+                if (h != null) h(this, EventArgs.Empty);
+            };
+            Controls.Add(Slider);
+
+            SyncLabel();
+        }
+
+        /// <summary>超过这个值就把数字标成琥珀色（提示再往上容易削顶/过响）。</summary>
+        public int WarnAbove
+        {
+            get { return _warnAbove; }
+            set { _warnAbove = value; SyncValue(); }
+        }
+
+        public int Value
+        {
+            get { return Slider.Value; }
+            set { Slider.Value = value; SyncLabel(); }
+        }
+
+        public int Minimum { get { return Slider.Minimum; } }
+        public int Maximum { get { return Slider.Maximum; } }
+
+
+
+        private void SyncLabel()
+        {
+            SyncValue();
+        }
+
+        private void SyncValue()
+        {
+            if (_value == null || Slider == null) return;
+            _value.Text = Slider.Value + "%";
+            _value.ForeColor = Slider.Value > _warnAbove ? Theme.Warn : Theme.TextSecondary;
+        }
+    }
+
+    /// <summary>
     /// 统一的「主状态 + 副标题」两行文字块。
     ///
     /// 之前各页面各自 new Label 再逐个设字体颜色，容易走样；

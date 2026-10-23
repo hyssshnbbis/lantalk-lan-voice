@@ -186,6 +186,11 @@
 **公共控件要复用**（用户强调过「先写控件，再按需调用」）：
 - `CardBase.SwitchRow(x, y, title, desc, titleW)` → 一行「开关 + 标题 + 说明」
 - `CardBase.StatusLine(x, y, w)` → 统一的两行状态块（返回 `StatusBlock`）
+- `Theme.SliderRow(title, min, max, value, width)` → **一行「标题 + 滑块 + 右侧百分比」**，
+  `WarnAbove` 设多少，超过就自动把数字标琥珀色（放音音量 150、麦克风增益 200）。
+  **宽度必须在构造时传进去**：子控件位置只在构造里算一次，之后交给 `ApplyDpiScale` 等比放大；
+  如果放到 `OnResize` 里按 `Width` 重算，DPI 放大后 `Width` 已是设备像素，再减逻辑宽度会把
+  数值标签挤出面板（踩过，标签直接看不见）。
 - **大头卡片的图标点法**：自己卡 = 闭麦/扬声器静音/退出（点一下直接生效）；
   别人卡 = 音量图标弹出**一条音量条**（`MainForm.ShowVolumePopup`，212x65，只有滑块，
   边拉边生效，关掉时刷新卡片），静音图标点一下直接静音/解除；**右键**才弹成员小窗。

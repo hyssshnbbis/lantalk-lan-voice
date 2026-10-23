@@ -395,16 +395,14 @@ namespace LanTalk
         public readonly OptionRow Full;
         public readonly OptionRow Ptt;
         public readonly FlatButton PttButton;
-        public readonly DarkSlider Volume;
-        public readonly Label VolVal;
-        public readonly DarkSlider MicGain;
-        public readonly Label MicGainVal;
+        public readonly SliderRow VolRow;
+        public readonly SliderRow GainRow;
         public readonly CheckBox SpkMute;
         public readonly CheckBox MicMute;
         public readonly DarkSelect Denoise;
 
         public const int CardW = 404;
-        public const int CardH = 376;
+        public const int CardH = 380;
 
         public ModeCard(int x, int y) : base("通话模式与音量", x, y, CardW, CardH)
         {
@@ -416,28 +414,20 @@ namespace LanTalk
             int py = ContentTop + 54 + 48 + RowGap + 4;
             PttButton = Button("按住说话（也可按空格）", PadH, py, InnerW, 34, FlatButton.Look.Normal);
 
+            // 音量与麦克风增益都用公共控件 SliderRow（标题 + 数值 + 滑块，超阈值标黄）
             int vy = py + 34 + RowGap + 6;
-            Caption("放音音量　0–200%", PadH, vy, 140);
-            VolVal = Value("100%", Width - PadH - 64, vy, 64);
-            Volume = new DarkSlider();
-            Volume.Minimum = 0;
-            Volume.Maximum = 200;
-            Volume.Value = 100;
-            Volume.SetBounds(PadH, vy + 20, InnerW, 28);
-            Controls.Add(Volume);
+            VolRow = new SliderRow("放音音量　0–200%", 0, 200, 100, InnerW);
+            VolRow.WarnAbove = 150;          // 拉过 150% 就开始标黄：再往上容易削顶
+            VolRow.SetBounds(PadH, vy, InnerW, SliderRow.RowH);
+            Controls.Add(VolRow);
 
             // 麦克风增益：放音音量管"听别人"，这里管"别人听你"
-            int gy = vy + 20 + 28 + RowGap + 2;
-            Caption("麦克风增益　0–400%", PadH, gy, 140);
-            MicGainVal = Value("100%", Width - PadH - 64, gy, 64);
-            MicGain = new DarkSlider();
-            MicGain.Minimum = 0;
-            MicGain.Maximum = 400;
-            MicGain.Value = 100;
-            MicGain.SetBounds(PadH, gy + 20, InnerW, 28);
-            Controls.Add(MicGain);
+            GainRow = new SliderRow("麦克风增益　0–400%", 0, 400, 100, InnerW);
+            GainRow.WarnAbove = 200;
+            GainRow.SetBounds(PadH, vy + SliderRow.RowH + 4, InnerW, SliderRow.RowH);
+            Controls.Add(GainRow);
 
-            int my = gy + 20 + 28 + RowGap + 2;
+            int my = vy + (SliderRow.RowH + 4) * 2 + 4;
             SpkMute = Check("静音扬声器", PadH, my, 120);
             MicMute = Check("静音话筒", PadH + 128, my, 116);
 

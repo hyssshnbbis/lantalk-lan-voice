@@ -57,10 +57,8 @@ namespace LanTalk
 
         private OptionRow _rdoFull, _rdoPtt;
         private FlatButton _btnPtt;
-        private Label _lblVolVal;
         private DarkSlider _trkVolume;
         private DarkSlider _trkMicGain;
-        private Label _lblMicGainVal;
         private CheckBox _chkSpkMute, _chkMicMute;
         private DarkSelect _cmbDenoise;
 
@@ -258,10 +256,8 @@ namespace LanTalk
             _rdoFull = _cardMode.Full;
             _rdoPtt = _cardMode.Ptt;
             _btnPtt = _cardMode.PttButton;
-            _trkVolume = _cardMode.Volume;
-            _lblVolVal = _cardMode.VolVal;
-            _trkMicGain = _cardMode.MicGain;
-            _lblMicGainVal = _cardMode.MicGainVal;
+            _trkVolume = _cardMode.VolRow.Slider;
+            _trkMicGain = _cardMode.GainRow.Slider;
             _chkSpkMute = _cardMode.SpkMute;
             _chkMicMute = _cardMode.MicMute;
             _cmbDenoise = _cardMode.Denoise;
@@ -1216,17 +1212,13 @@ Log.Write("降噪引擎 " + (_args.UseNsEngine ? "WebRTC NS" : "轻量版"));
         private void OnVolumeChanged(object sender, EventArgs e)
         {
             if (_audio != null) _audio.VolumePercent = _trkVolume.Value;
-            _lblVolVal.Text = _trkVolume.Value + "%";
         }
 
         /// <summary>麦克风增益 0..150%：立刻生效，并记进设置（下次启动还是这个值）。</summary>
         private void OnMicGainChanged(object sender, EventArgs e)
         {
-            int v = _trkMicGain.Value;
-            _lblMicGainVal.Text = v + "%";
-            // 超过 200% 会把噪声一起放大、还容易削顶，标黄提醒一下
-            _lblMicGainVal.ForeColor = v > 200 ? Theme.Warn : Theme.TextSecondary;
-            Profile.MicGain = v;
+            // 数值与"标黄"提示由 SliderRow 自己负责
+            Profile.MicGain = _trkMicGain.Value;
             if (_audio != null) _audio.MicGainPercent = Profile.MicGain;
         }
 
