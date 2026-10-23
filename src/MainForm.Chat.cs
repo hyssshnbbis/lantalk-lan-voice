@@ -28,7 +28,6 @@ namespace LanTalk
             try
             {
                 if (_conference != null && _conference.Joined) sent = _conference.SendChat(text);
-                else if (_session != null && _session.State == CallState.InCall) sent = _session.SendChat(text);
             }
             catch (Exception ex) { Log.Write("发送聊天失败：" + ex.Message); }
 
@@ -47,7 +46,6 @@ namespace LanTalk
             try
             {
                 if (_conference != null && _conference.Joined) sent = _conference.SendImage(jpeg);
-                else if (_session != null && _session.State == CallState.InCall) sent = _session.SendImage(jpeg);
             }
             catch (Exception ex) { Log.Write("发送图片失败：" + ex.Message); }
 

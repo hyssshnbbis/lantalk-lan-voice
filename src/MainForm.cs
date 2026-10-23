@@ -1,4 +1,4 @@
-﻿// MainForm.cs —— 图形界面（WinForms，纯代码构建，无设计器文件）
+// MainForm.cs —— 图形界面（WinForms，纯代码构建，无设计器文件）
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -78,7 +78,6 @@ namespace LanTalk
         private Conference _conference;
         // 一对一模式的会话对象。界面入口已移除，这里暂时保留以免状态面板取不到音频等级；
         // 下一阶段连同 Session.cs 一起删除。
-        private Session _session;
         private string _myName;
         private bool _pttHeld;
         private int _lastMemberCount;
@@ -279,7 +278,10 @@ namespace LanTalk
             // 顶栏胶囊直接驱动既有的复选框/挂断逻辑（只有一套状态）
             _topBar.Pill.MicToggled += delegate { _chkMicMute.Checked = !_chkMicMute.Checked; };
             _topBar.Pill.SpeakerToggled += delegate { _chkSpkMute.Checked = !_chkSpkMute.Checked; };
-            _topBar.Pill.HangupClicked += delegate { OnHangupClick(null, EventArgs.Empty); };
+            _topBar.Pill.HangupClicked += delegate
+            {
+                if (_conference != null && _conference.Joined) _conference.Leave();
+            };
             _topBar.SettingsClicked += delegate { ShowSettings(); };
 
             // 日志与成员
@@ -578,8 +580,7 @@ namespace LanTalk
             try
             {
                 if (_conference != null) { _conference.Dispose(); _conference = null; }
-                if (_session != null) { _session.Dispose(); _session = null; }
-                if (_audio != null) { _audio.Dispose(); _audio = null; }
+                    if (_audio != null) { _audio.Dispose(); _audio = null; }
                 if (_net != null) { _net.Dispose(); _net = null; }
             }
             catch { }
@@ -606,13 +607,6 @@ namespace LanTalk
             // 一对一和会议共用同一条音频通道（同一套设备、编码、混音器）
             _audio = new AudioPath(_net, SelectedCodec(), Rate, FrameMs, InputFactory(), OutputFactory());
 
-            _session = new Session(_net, _audio);
-            _session.MyName = _myName;
-            _session.ChatReceived += OnChatReceived;
-            _session.ImageReceived += OnChatImageReceived;
-            _session.Notice += delegate(string m) { Log.Write(m); };
-            _session.StateChanged += OnSessionStateChanged;
-            _session.PresencePing = true;
 
             _audio.UseNsEngine = _args.UseNsEngine;
             _audio.HumFilter = Profile.HumFilter;
@@ -660,9 +654,9 @@ namespace LanTalk
 
         private void OnApplyClick(object sender, EventArgs e)
         {
-            if (_session != null && _session.State != CallState.Idle)
+            if (_conference != null && _conference.Joined)
             {
-                Log.Write("通话中不能改监听设置，请先挂断。");
+                Log.Write("会议中不能改监听设置，请先离开会议。");
                 return;
             }
             RebuildSession();
@@ -670,9 +664,9 @@ namespace LanTalk
 
         private void OnRefreshDevClick(object sender, EventArgs e)
         {
-            if (_session != null && _session.State == CallState.InCall)
+            if (_conference != null && _conference.Joined)
             {
-                Log.Write("通话中不能切换设备，请先挂断。");
+                Log.Write("会议中不能切换设备，请先离开会议。");
                 return;
             }
             LoadDevices();
@@ -681,13 +675,12 @@ namespace LanTalk
 
         private void OnCodecChanged(object sender, EventArgs e)
         {
-            if (_session == null) return;
-            if (_session.State == CallState.InCall || (_conference != null && _conference.Joined))
+            if (_conference != null && _conference.Joined)
             {
-                Log.Write("通话/会议中不能改编码，将在下一次生效。");
+                Log.Write("会议中不能改编码，将在下一次生效。");
                 return;
             }
-            _session.Audio.Codec = SelectedCodec();
+            if (_audio != null) _audio.Codec = SelectedCodec();
             Log.Write("语音编码已切换为：" + CodecUtil.Name(SelectedCodec()));
         }
 
@@ -708,11 +701,7 @@ namespace LanTalk
             if (_cardPeer != null) _cardPeer.Visible = !room;
             if (_cardRoom != null) _cardRoom.Visible = room;
 
-            if (room && _session != null && _session.State != CallState.Idle)
-            {
-                Log.Write("会议模式不支持一对一通话，请先挂断。");
-                return;
-            }
+
             if (!room && _conference != null && _conference.Joined)
             {
                 Log.Write("已切回一对一模式，自动退出会议。");
@@ -917,11 +906,7 @@ namespace LanTalk
         {
             bool ptt = _rdoPtt.Checked;
             _btnPtt.Enabled = ptt;
-            if (_session != null)
-            {
-                _session.Audio.PttMode = ptt;
-                _session.SetTalking(!ptt);
-            }
+            if (_audio != null) _audio.PttMode = ptt;
             Log.Write(ptt
                 ? "已切到「按键说话」：按住按钮或空格键时才把声音发出去，用扬声器也不会啸叫。"
                 : "已切到「全双工」：请戴耳机，否则扬声器的声音会被话筒收回去形成回声。");
@@ -965,9 +950,9 @@ namespace LanTalk
 
         private void OnRecordAbClick(object sender, EventArgs e)
         {
-            if (_session != null && _session.State != CallState.Idle)
+            if (_conference != null && _conference.Joined)
             {
-                MessageBox.Show(this, "请先结束当前通话，再做降噪对比录音。", "录音对比",
+                MessageBox.Show(this, "请先离开会议，再做降噪对比录音。", "录音对比",
                                 MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
@@ -1075,22 +1060,22 @@ namespace LanTalk
 
         private void OnVolumeChanged(object sender, EventArgs e)
         {
-            if (_session != null) _session.Audio.VolumePercent = _trkVolume.Value;
+            if (_audio != null) _audio.VolumePercent = _trkVolume.Value;
             _lblVolVal.Text = _trkVolume.Value + "%";
         }
 
         private void OnMuteChanged(object sender, EventArgs e)
         {
-            // 顶栏胶囊与复选框状态双向同步（要在 _session 判空之前，否则空闲时不同步）
+            // 顶栏胶囊与复选框状态双向同步（要在 _audio 判空之前，否则空闲时不同步）
             if (_topBar != null)
             {
                 _topBar.SetMicMuted(_chkMicMute.Checked);
                 _topBar.SetSpeakerMuted(_chkSpkMute.Checked);
             }
 
-            if (_session == null) return;
-            _session.Audio.MicMuted = _chkMicMute.Checked;
-            _session.Audio.SpeakerMuted = _chkSpkMute.Checked;
+            if (_audio == null) return;
+            _audio.MicMuted = _chkMicMute.Checked;
+            _audio.SpeakerMuted = _chkSpkMute.Checked;
         }
 
         // ================= 呼叫操作 =================
@@ -1128,24 +1113,6 @@ namespace LanTalk
             UpdatePeerRemote();
         }
 
-        private void OnCallClick(object sender, EventArgs e)
-        {
-            string ip;
-            int port;
-            if (!ParsePeer(out ip, out port)) return;
-            UpdatePeerRemote();
-            _session.Call(ip, port);
-        }
-
-        private void OnAnswerClick(object sender, EventArgs e)
-        {
-            _session.Answer();
-        }
-
-        private void OnHangupClick(object sender, EventArgs e)
-        {
-            _session.Hangup();
-        }
 
         private void OnProbeClick(object sender, EventArgs e)
         {
@@ -1223,14 +1190,14 @@ namespace LanTalk
         {
             if (!_rdoPtt.Checked || _pttHeld) return;
             _pttHeld = true;
-            if (_session != null) _session.SetTalking(true);
+            if (_audio != null) _audio.PttTalking = true;
         }
 
         private void OnPttUp(object sender, EventArgs e)
         {
             if (!_pttHeld) return;
             _pttHeld = false;
-            if (_session != null) _session.SetTalking(false);
+            if (_audio != null) _audio.PttTalking = false;
         }
 
         private void OnFormKeyDown(object sender, KeyEventArgs e)
@@ -1254,9 +1221,9 @@ namespace LanTalk
 
         private void OnLoopTestClick(object sender, EventArgs e)
         {
-            if (_session != null && _session.State != CallState.Idle)
+            if (_conference != null && _conference.Joined)
             {
-                Log.Write("通话中不能做本机回环测试，请先挂断。");
+                Log.Write("会议中不能做本机回环测试，请先离开会议。");
                 return;
             }
             Log.Write("开始本机回环测试：话筒采集 → 编码 → 解码 → 扬声器放回（会有 0.1 秒左右延迟，戴耳机更安全）。");
@@ -1306,15 +1273,12 @@ namespace LanTalk
 
         private void OnTick(object sender, EventArgs e)
         {
-            if (_session == null) return;
-            try { _session.Tick(); }
-            catch (Exception ex) { Log.Write("状态机异常：" + ex.Message); }
             try { if (_conference != null && _conference.Joined) _conference.Tick(); }
             catch (Exception ex) { Log.Write("会议异常：" + ex.Message); }
 
             try
             {
-                _session.AutoAnswer = _chkAutoAnswer.Checked;
+
                 RefreshStatus();
                 RefreshMeters();
 
@@ -1333,11 +1297,7 @@ namespace LanTalk
 
         private void RefreshStatus()
         {
-            if (_session == null) return;
-            bool room = RoomMode;
 
-            if (room)
-            {
                 bool joined = _conference != null && _conference.Joined;
                 _lblState.Text = joined ? "会议中" : "空闲";
                 _lblState.ForeColor = joined ? Theme.Accent : Theme.Info;
@@ -1354,86 +1314,29 @@ namespace LanTalk
 
                 _lblPresence.Text = joined ? ("会议中 " + _conference.MemberCount + " 人") : "未加入会议";
                 _lblPresence.ForeColor = joined ? Theme.Accent : Theme.TextMuted;
-                return;
-            }
 
-            _btnJoin.Enabled = false;
-            _btnLeave.Enabled = false;
-            _btnAddManual.Enabled = false;
-
-            CallState st = _session.State;
-            _lblState.Text = CallStateText.Of(st);
-
-            if (st == CallState.InCall) _lblState.ForeColor = Theme.Accent;
-            else if (st == CallState.Incoming) _lblState.ForeColor = Theme.Warn;
-            else if (st == CallState.Outgoing) _lblState.ForeColor = Theme.Info;
-            else if (st == CallState.Outgoing) _lblState.ForeColor = Color.FromArgb(0, 80, 180);
-            else _lblState.ForeColor = Color.FromArgb(70, 70, 70);
-
-            string sub2 = "";
-            if (st == CallState.Outgoing)
-            {
-                sub2 = _session.PeerRinging ? "对方正在振铃…" : "正在等待对方响应…";
-                sub2 += "（已等待 " + ((int)_session.StateSeconds) + " 秒）";
-            }
-            else if (st == CallState.Incoming)
-            {
-                sub2 = "有来电，点「接听」按钮接通（已振铃 " + ((int)_session.StateSeconds) + " 秒）";
-            }
-            else if (st == CallState.InCall)
-            {
-                sub2 = "通话时长 " + TimeSpan.FromSeconds((int)_session.StateSeconds).ToString(@"mm\:ss");
-                if (_rdoPtt.Checked) sub2 += _pttHeld ? "　● 正在发送" : "　○ 按住空格或按钮说话";
-                if (_session.PeerTalking) sub2 += "　（对方正在说话）";
-            }
-            else
-            {
-                sub2 = _net != null ? "本机 " + _net.LocalEndPointText : "";
-            }
-            _lblPeerState.Text = sub2;
-
-            // 会议模式下呼叫/接听没有意义，直接隐藏；一对一才显示
-            bool callUi = !RoomMode;
-            if (_topBar != null) _topBar.SetHangupEnabled(st != CallState.Idle || RoomMode);
-
-            // 对方在线状态
-            if (_net == null || _net.Remote == null)
-            {
-                _lblPresence.Text = "对方未设置";
-                _lblPresence.ForeColor = Color.DimGray;
-            }
-            else if (_session.PeerSeenRecently(4000))
-            {
-                double rtt = _net.RttMs;
-                _lblPresence.Text = "对方在线" + (rtt >= 0 ? "（RTT " + rtt.ToString("F1") + " ms）" : "");
-                _lblPresence.ForeColor = Color.FromArgb(0, 120, 0);
-            }
-            else
-            {
-                _lblPresence.Text = "对方无响应";
-                _lblPresence.ForeColor = Color.Firebrick;
-            }
         }
 
         private void RefreshMeters()
         {
-            int inLvl = _session.Audio.InputLevel;
-            int outLvl = _session.Audio.OutputLevel;
+            if (_audio == null) return;
+            int inLvl = _audio.InputLevel;
+            int outLvl = _audio.OutputLevel;
             _pbIn.Value = inLvl > 100 ? 100 : inLvl;
             _pbOut.Value = outLvl > 100 ? 100 : outLvl;
 
             UdpPeer n = _net;
             if (n == null) return;
-            int bufMs = _session.Audio.BufferDepthMs;
-            long concealed = _session.Audio.ConcealedFrames;
+            int bufMs = _audio.BufferDepthMs;
+            long concealed = _audio.ConcealedFrames;
 
             long rx = n.RxPackets;
             long lost = n.LostPackets;
             double lossPct = (rx + lost) > 0 ? (100.0 * lost / (rx + lost)) : 0;
 
-            double secs = _session.StateSeconds;
+            double secs = _conference != null ? _conference.JoinedSeconds : 0;
             double upKbps = 0, downKbps = 0;
-            if (_session.State == CallState.InCall && secs > 0.5)
+            if (_conference != null && _conference.Joined && secs > 0.5)
             {
                 upKbps = n.TxBytes * 8.0 / 1000.0 / secs;
                 downKbps = n.RxBytes * 8.0 / 1000.0 / secs;
@@ -1445,7 +1348,7 @@ namespace LanTalk
             string l2 = "往返 " + (n.RttMs >= 0 ? n.RttMs.ToString("F1") + " ms" : "—") +
                         "　抖动 " + bufMs + " ms　补静音 " + concealed;
             string l3 = "码率 ↑" + upKbps.ToString("F0") + " ↓" + downKbps.ToString("F0") + " kbps　" +
-                        CodecUtil.Name(_session.Audio.Codec).Split('（')[0];
+                        CodecUtil.Name(_audio.Codec).Split('（')[0];
             _lblStats.Text = l1 + Environment.NewLine + l2 + Environment.NewLine + l3;
         }
 
@@ -1495,8 +1398,6 @@ namespace LanTalk
             _closing = true;
             try { if (_tick != null) _tick.Stop(); } catch { }
             try { if (_conference != null) _conference.Dispose(); } catch { }
-            try { if (_session != null) _session.Hangup(); } catch { }
-            try { if (_session != null) _session.Dispose(); } catch { }
             try { if (_audio != null) _audio.Dispose(); } catch { }
             try { if (_net != null) _net.Dispose(); } catch { }
             try { Log.LineAdded -= OnLogLine; } catch { }

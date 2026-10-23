@@ -65,6 +65,18 @@ namespace LanTalk
         private readonly object _lock = new object();
         private readonly ImageAssembler _imgAsm = new ImageAssembler();
         private readonly ImageAssembler _avatarAsm = new ImageAssembler();
+        private DateTime _joinedUtc;
+
+        /// <summary>本次加入会议已经过去了多少秒；未加入时为 0。</summary>
+        public double JoinedSeconds
+        {
+            get
+            {
+                if (!Joined) return 0;
+                double s = (DateTime.UtcNow - _joinedUtc).TotalSeconds;
+                return s < 0 ? 0 : s;
+            }
+        }
         private uint _avatarSeq;
         private byte[] _myAvatar;
 
@@ -130,6 +142,7 @@ namespace LanTalk
             {
                 if (_joined) return;
                 _joined = true;
+            _joinedUtc = DateTime.UtcNow;
                 _roomPort = roomPort;
                 _joinedAt = DateTime.UtcNow;
                 _members.Clear();

@@ -298,7 +298,7 @@ namespace LanTalk
             if (a.Headless)
             {
                 Con.Prepare();
-                return a.Room > 0 ? Headless.RunConference(a) : Headless.Run(a);
+                return Headless.RunConference(a);
             }
 
             Application.EnableVisualStyles();

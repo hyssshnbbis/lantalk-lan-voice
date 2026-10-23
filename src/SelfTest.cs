@@ -60,7 +60,6 @@ namespace LanTalk
             TestChatWire();
             TestImageWire();
             TestImageE2E();
-            TestImageP2P();
             TestAvatarCache();
             TestHumFix();
             TestSelfUpdate();
@@ -531,81 +530,6 @@ namespace LanTalk
                 try { if (netA != null) netA.Dispose(); } catch { }
                 try { if (netB != null) netB.Dispose(); } catch { }
             }
-        }
-        /// <summary>一对一的图片路径：走 Session.SendImage，必须也逐字节送达。</summary>
-        private static void TestImageP2P()
-        {
-            List<string> bad = new List<string>();
-            UdpPeer netA = new UdpPeer();
-            UdpPeer netB = new UdpPeer();
-            AudioPath apA = null, apB = null;
-            Session sA = null, sB = null;
-            try
-            {
-                netA.Start("127.0.0.1", 0);
-                netB.Start("127.0.0.1", 0);
-                apA = new AudioPath(netA, VoiceCodec.Pcm16, Rate, FrameMs,
-                    delegate() { return new ToneSource(Rate, FrameMs); },
-                    delegate() { return new NullSink(Rate, FrameMs); });
-                apB = new AudioPath(netB, VoiceCodec.Pcm16, Rate, FrameMs,
-                    delegate() { return new ToneSource(Rate, FrameMs); },
-                    delegate() { return new NullSink(Rate, FrameMs); });
-                sA = new Session(netA, apA);
-                sB = new Session(netB, apB);
-                sB.AutoAnswer = true;
-
-                // 先接通
-                sA.Call("127.0.0.1", netB.LocalPort);
-                DateTime deadline = DateTime.UtcNow.AddSeconds(5);
-                while (DateTime.UtcNow < deadline)
-                {
-                    sA.Tick(); sB.Tick();
-                    if (sA.State == CallState.InCall && sB.State == CallState.InCall) break;
-                    Thread.Sleep(50);
-                }
-                if (sA.State != CallState.InCall || sB.State != CallState.InCall)
-                    bad.Add("没能建立通话（A=" + sA.State + " B=" + sB.State + "）");
-
-                // 发一张 4500 字节的"图"
-                byte[] img = new byte[4500];
-                for (int i = 0; i < img.Length; i++) img[i] = (byte)((i * 29 + 11) & 0xFF);
-
-                byte[] got = null;
-                sB.ImageReceived += delegate(string who, byte[] d) { got = d; };
-
-                int sent = sA.SendImage(img);
-                int expect = ImageWire.ChunkCount(img.Length);
-                if (sent != expect) bad.Add("片数 " + sent + " != " + expect);
-
-                deadline = DateTime.UtcNow.AddSeconds(5);
-                while (DateTime.UtcNow < deadline && got == null)
-                {
-                    sA.Tick(); sB.Tick();
-                    Thread.Sleep(20);
-                }
-
-                bool same = got != null && got.Length == img.Length;
-                if (same)
-                {
-                    for (int i = 0; i < img.Length; i++) if (got[i] != img[i]) { same = false; break; }
-                }
-                if (!same) bad.Add("一对一收到的字节不一致（收到 " + (got == null ? "null" : got.Length.ToString()) + "）");
-            }
-            catch (Exception ex) { bad.Add("异常：" + ex.Message); }
-            finally
-            {
-                try { if (sA != null) sA.Dispose(); } catch { }
-                try { if (sB != null) sB.Dispose(); } catch { }
-                try { if (apA != null) apA.Dispose(); } catch { }
-                try { if (apB != null) apB.Dispose(); } catch { }
-                try { if (netA != null) netA.Dispose(); } catch { }
-                try { if (netB != null) netB.Dispose(); } catch { }
-            }
-
-            if (bad.Count == 0)
-                T.Ok("image_p2p", "一对一接通后发 4500 字节图片，切成 " + ImageWire.ChunkCount(4500) + " 片并逐字节一致");
-            else
-                T.Bad("image_p2p", string.Join("；", bad.ToArray()));
         }
         /// <summary>图片端到端：A 发一张，B 必须收到完全一致的字节。</summary>
         private static void TestImageE2E()
@@ -1846,111 +1770,6 @@ namespace LanTalk
         private const int FrameMs = 20;
         private const int SamplesPerFrame = Rate * FrameMs / 1000;
 
-        public static int Run(Args a)
-        {
-            UdpPeer net = new UdpPeer();
-            try
-            {
-                net.Start(a.BindIp, a.LocalPort);
-            }
-            catch (Exception ex)
-            {
-                Log.Write("[HEADLESS] 绑定端口失败：" + ex.Message);
-                return 3;
-            }
-
-            Func<IAudioSource> sf;
-            Func<IAudioSink> sif;
-            if (a.NullAudio)
-            {
-                sf = delegate() { return new ToneSource(Rate, FrameMs); };
-                sif = delegate() { return new NullSink(Rate, FrameMs); };
-            }
-            else
-            {
-                sf = delegate() { return new WaveInSource(Mm.WAVE_MAPPER, Rate, FrameMs, 8); };
-                sif = delegate() { return new WaveOutSink(Mm.WAVE_MAPPER, Rate, FrameMs, 8); };
-            }
-
-            AudioPath audio = new AudioPath(net, a.Codec, Rate, FrameMs, sf, sif);
-            audio.UseNsEngine = a.UseNsEngine;
-            audio.SetDenoiseLevel(a.EffectiveDenoise());
-            if (a.NullAudio && !a.DenoiseSpecified)
-                Log.Write("[HEADLESS] 内置测试音源模式：降噪默认关闭（要强制开启请用 --denoise mid）");
-            Session s = new Session(net, audio);
-            s.AutoAnswer = a.AutoAnswer;
-            s.Notice += delegate(string m) { Log.Write("[会话] " + m); };
-
-            long patTotal = 0, patMatch = 0;
-            if (a.NullAudio)
-            {
-                VoiceCodec codec = a.Codec;
-                s.Audio.FrameDecoded += delegate(long seq, byte[] pcm, int len)
-                {
-                    for (int i = 0; i + 1 < len; i += 2)
-                    {
-                        short expect = ToneSource.SampleAt(seq * SamplesPerFrame + (i / 2));
-                        if (codec == VoiceCodec.MuLaw) expect = G711.Decode(G711.Encode(expect));
-                        short act = (short)(pcm[i] | (pcm[i + 1] << 8));
-                        Interlocked.Increment(ref patTotal);
-                        if (act == expect) Interlocked.Increment(ref patMatch);
-                    }
-                };
-            }
-
-            Log.Write("[HEADLESS] 本机监听 " + net.LocalEndPointText +
-                      "，角色=" + (a.AutoCall ? "主叫" : (a.AutoAnswer ? "被叫(自动接听)" : "仅监听")) +
-                      "，编码=" + CodecUtil.Name(a.Codec) + "，音频=" + (a.NullAudio ? "内置测试音源" : "真实声卡") +
-                      "，时长=" + a.DurationSec + " 秒");
-
-            DateTime start = DateTime.UtcNow;
-            bool called = false;
-            bool reachedCall = false;
-            long rxAtCall = 0;
-
-            while ((DateTime.UtcNow - start).TotalSeconds < a.DurationSec)
-            {
-                s.Tick();
-                if (a.AutoCall && !called && (DateTime.UtcNow - start).TotalMilliseconds > 400)
-                {
-                    called = true;
-                    s.Call(a.PeerIp, a.PeerPort);
-                }
-                if (s.State == CallState.InCall && !reachedCall)
-                {
-                    reachedCall = true;
-                    rxAtCall = net.RxPackets;
-                }
-                Thread.Sleep(50);
-            }
-
-            long played = s.Audio.PlayedFrames;
-            long concealed = s.Audio.ConcealedFrames;
-
-            Log.Write("[HEADLESS] 结果 state=" + CallStateText.Of(s.State) +
-                      " reached_call=" + reachedCall +
-                      " local=" + net.LocalEndPointText +
-                      " tx_pkts=" + net.TxPackets +
-                      " rx_pkts=" + net.RxPackets +
-                      " tx_bytes=" + net.TxBytes +
-                      " rx_bytes=" + net.RxBytes +
-                      " lost=" + net.LostPackets +
-                      " late=" + net.LatePackets +
-                      " rtt_ms=" + T.F(net.RttMs, 2) +
-                      " sent_frames=" + s.Audio.SentFrames +
-                      " decoded_frames=" + s.Audio.DecodedFrames +
-                      " played_frames=" + played +
-                      " concealed=" + concealed +
-                      " pattern=" + patMatch + "/" + patTotal);
-
-            try { s.Hangup(); } catch { }
-            try { s.Dispose(); } catch { }
-            try { net.Dispose(); } catch { }
-
-            bool ok = reachedCall && net.RxPackets > 0 && net.RxBytes > 0;
-            Log.Write(ok ? "[HEADLESS] 判定：通话链路建立成功" : "[HEADLESS] 判定：通话链路未建立");
-            return ok ? 0 : 2;
-        }
 
         /// <summary>无界面的多人会议运行：用于多进程会议室验证。</summary>
         public static int RunConference(Args a)
