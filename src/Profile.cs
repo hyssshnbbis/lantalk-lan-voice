@@ -23,6 +23,9 @@ namespace LanTalk
     {
         private static string _name = "";
         private static string _clientId = "";
+        // 默认值：测试版默认开（方便试听），正式版默认关（不惊动现有用户）
+        private static bool _humFilter = AppPaths.IsPreview;
+        private static bool _clickFilter = AppPaths.IsPreview;
         private static Image _avatar;
         private static bool _avatarLoaded;
 
@@ -31,11 +34,25 @@ namespace LanTalk
             get
             {
                 return Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LanTalk");
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppPaths.DataFolder);
             }
         }
 
         public static string FilePath { get { return Path.Combine(Dir, "profile.txt"); } }
+
+        /// <summary>电流声抑制（工频陷波），默认开。</summary>
+        public static bool HumFilter
+        {
+            get { return _humFilter; }
+            set { _humFilter = value; Save(); }
+        }
+
+        /// <summary>键盘等冲击噪声抑制，默认开。</summary>
+        public static bool ClickFilter
+        {
+            get { return _clickFilter; }
+            set { _clickFilter = value; Save(); }
+        }
 
         /// <summary>ClientId 的 16 字节二进制形式（协议里用它，省得传 32 个字符）。</summary>
         public static byte[] ClientIdBytes
@@ -143,6 +160,8 @@ namespace LanTalk
                     string v = l.Substring(eq + 1).Trim();
                     if (k == "name") _name = v;
                     else if (k == "clientId") _clientId = v;
+                    else if (k == "humfilter") _humFilter = v != "0";
+                    else if (k == "clickfilter") _clickFilter = v != "0";
                 }
             }
             catch { }
@@ -156,6 +175,8 @@ namespace LanTalk
                 StringBuilder sb = new StringBuilder();
                 sb.AppendLine("name=" + _name);
                 sb.AppendLine("clientId=" + _clientId);
+                sb.AppendLine("humfilter=" + (_humFilter ? "1" : "0"));
+                sb.AppendLine("clickfilter=" + (_clickFilter ? "1" : "0"));
                 File.WriteAllText(FilePath, sb.ToString(), Encoding.UTF8);
             }
             catch { }

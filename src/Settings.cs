@@ -1,4 +1,4 @@
-// Settings.cs —— 设置页
+﻿// Settings.cs —— 设置页
 //
 // 参照用户给的参考图：左边一条分组导航（顶部「返回」，下面按组列条目），
 // 右边是内容区。内容是"页面"（Panel），切导航就切页面。
@@ -117,6 +117,10 @@ namespace LanTalk
         public readonly PictureBox AvatarBox;
         public readonly FlatButton AvatarPick, AvatarClear;
         public readonly Label ProfileHint;
+        public readonly FlatButton HumBtn, ClickBtn;
+
+        /// <summary>噪声开关变更时通知外部重新应用到音频链路。</summary>
+        public event Action MainAudioChanged;
         public readonly Panel PageUpdate;
 
         public readonly Label VersionLabel;
@@ -166,7 +170,60 @@ namespace LanTalk
 
             Device = new DeviceCard(18, 18);
             Mode = new ModeCard(442, 18);
-            PageSettings.Controls.AddRange(new Control[] { Device, Mode });
+            // 噪声处理：工频陷波与瞬态抑制，各自可独立开关
+            CardPanel noise = new CardPanel();
+            noise.SetBounds(18, 366, 828, 96);
+            Label nTitle = new Label();
+            nTitle.Text = "噪声处理";
+            nTitle.Font = Theme.FontTitle;
+            nTitle.ForeColor = Theme.TextPrimary;
+            nTitle.BackColor = Color.Transparent;
+            nTitle.SetBounds(14, 6, 200, 22);
+            noise.Controls.Add(nTitle);
+
+            Label nHint = new Label();
+            nHint.Text = "电流声（工频嗡声）与键盘敲击是两类特殊噪声，通用降噪压不住，这里单独处理。";
+            nHint.Font = Theme.FontSmall;
+            nHint.ForeColor = Theme.TextMuted;
+            nHint.BackColor = Color.Transparent;
+            nHint.SetBounds(14, 30, 780, 18);
+            noise.Controls.Add(nHint);
+
+            HumBtn = new FlatButton(FlatButton.Look.Normal);
+            HumBtn.Text = "电流声抑制";
+            HumBtn.Selected = Profile.HumFilter;
+            HumBtn.SetBounds(14, 56, 150, 30);
+            HumBtn.Click += delegate
+            {
+                Profile.HumFilter = !Profile.HumFilter;
+                HumBtn.Selected = Profile.HumFilter;
+                Action cbHum = MainAudioChanged;
+                if (cbHum != null) cbHum();
+            };
+            noise.Controls.Add(HumBtn);
+
+            ClickBtn = new FlatButton(FlatButton.Look.Normal);
+            ClickBtn.Text = "键盘声抑制";
+            ClickBtn.Selected = Profile.ClickFilter;
+            ClickBtn.SetBounds(176, 56, 150, 30);
+            ClickBtn.Click += delegate
+            {
+                Profile.ClickFilter = !Profile.ClickFilter;
+                ClickBtn.Selected = Profile.ClickFilter;
+                Action h2 = MainAudioChanged;
+                if (h2 != null) h2();
+            };
+            noise.Controls.Add(ClickBtn);
+
+            Label nState = new Label();
+            nState.Text = "默认都开启。若觉得人声发闷或说话被压低，可以先关掉对应项对比。";
+            nState.Font = Theme.FontSmall;
+            nState.ForeColor = Theme.TextMuted;
+            nState.BackColor = Color.Transparent;
+            nState.SetBounds(340, 62, 470, 18);
+            noise.Controls.Add(nState);
+
+            PageSettings.Controls.AddRange(new Control[] { Device, Mode, noise });
 
             // 更新页
             PageUpdate = new Panel();

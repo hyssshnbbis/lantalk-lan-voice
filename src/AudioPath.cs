@@ -384,6 +384,20 @@ namespace LanTalk
         private long _retiredPlayed, _retiredConcealed;   // 已移除通道结转过来的累计值
         private readonly Denoiser _denoiser = new Denoiser();
         private readonly NsDenoiser _nsDenoiser = new NsDenoiser();
+
+        // 工频陷波（电流声）与键盘瞬态抑制。放在降噪之前：
+        // 嗡声是窄带、先挖掉最干净；瞬态先压住，免得带坏降噪的噪声估计。
+        private HumNotch _humNotch;
+        private ClickGuard _clickGuard;
+        private short[] _fxBuf;
+
+        /// <summary>电流声抑制（工频陷波）。</summary>
+        public bool HumFilter;
+        /// <summary>键盘等冲击噪声抑制。</summary>
+        public bool ClickFilter;
+
+        public HumNotch Hum { get { return _humNotch; } }
+        public ClickGuard Click { get { return _clickGuard; } }
         private bool _useNsEngine = true;
 
         private volatile bool _micMuted;
@@ -502,6 +516,8 @@ namespace LanTalk
             _sampleRate = sampleRate;
             _frameMs = frameMs;
             _frameBytes = sampleRate * 2 * frameMs / 1000;
+            _humNotch = new HumNotch(sampleRate);
+            _clickGuard = new ClickGuard(sampleRate, Math.Max(1, sampleRate * frameMs / 1000));
             _sourceFactory = sourceFactory;
             _sinkFactory = sinkFactory;
         }
@@ -679,10 +695,36 @@ namespace LanTalk
 
         // ---------------- 采集侧 ----------------
 
+        /// <summary>电流声陷波 + 键盘瞬态抑制（原地修改 PCM16 字节流）。</summary>
+        private void ApplyHumFix(byte[] pcm, int len)
+        {
+            if (!HumFilter && !ClickFilter) return;
+            int n = len / 2;
+            if (n <= 0) return;
+
+            if (_fxBuf == null || _fxBuf.Length < n) _fxBuf = new short[n];
+            for (int i = 0; i < n; i++) _fxBuf[i] = (short)(pcm[i * 2] | (pcm[i * 2 + 1] << 8));
+
+            if (HumFilter)
+            {
+                _humNotch.Analyze(_fxBuf, n);
+                _humNotch.Process(_fxBuf, n);
+            }
+            if (ClickFilter) _clickGuard.Process(_fxBuf, n);
+
+            for (int i = 0; i < n; i++)
+            {
+                pcm[i * 2] = (byte)(_fxBuf[i] & 0xFF);
+                pcm[i * 2 + 1] = (byte)((_fxBuf[i] >> 8) & 0xFF);
+            }
+        }
+
         private void OnCaptured(byte[] pcm, int len)
         {
             if (!_running) return;
             // 采集后立刻降噪；关闭档位时两条链路都是 bit-exact 直通
+            ApplyHumFix(pcm, len);
+
             if (_useNsEngine) _nsDenoiser.ProcessPcm(pcm, len);
             else _denoiser.ProcessPcm(pcm, len);
             _inLevel = Peak(pcm, len);

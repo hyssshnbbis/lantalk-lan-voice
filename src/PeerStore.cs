@@ -36,6 +36,9 @@ namespace LanTalk
         private static readonly Dictionary<string, Image> _img =
             new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
         private static bool _loaded;
+        private static bool _dirty;
+        private static DateTime _lastSaveUtc = DateTime.MinValue;
+        private const int SaveIntervalMs = 5000;
 
         /// <summary>测试用：把落盘位置指到临时目录，避免污染真实数据。</summary>
         internal static string DirOverride;
@@ -99,6 +102,8 @@ namespace LanTalk
                 foreach (Entry e in _map.Values)
                     sb.AppendLine(e.ClientId + "|" + e.Name + "|" + e.AvatarHash + "|" + e.LastSeen.Ticks);
                 File.WriteAllText(IndexPath, sb.ToString(), Encoding.UTF8);
+                _dirty = false;
+                _lastSaveUtc = DateTime.UtcNow;
             }
             catch { }
         }
@@ -118,7 +123,11 @@ namespace LanTalk
             if (!string.IsNullOrEmpty(name)) e.Name = name;
             e.AvatarHash = avatarHash;
             e.LastSeen = DateTime.UtcNow;
-            Save();
+
+            // 公告每秒都在发，绝不能每次都写盘——那是在音频线程上做磁盘 I/O。
+            // 攒着，最多 5 秒落一次。
+            _dirty = true;
+            if ((DateTime.UtcNow - _lastSaveUtc).TotalMilliseconds >= SaveIntervalMs) Save();
         }
 
         /// <summary>这个人现在的头像指纹是不是我们已经有了（有就不必再传）。</summary>
@@ -180,6 +189,12 @@ namespace LanTalk
                 try { string f = AvatarFile(id); if (File.Exists(f)) File.Delete(f); } catch { }
             }
             Save();
+        }
+
+        /// <summary>把攒着的改动落盘（退出前、切换房间时调）。</summary>
+        public static void Flush()
+        {
+            if (_dirty) Save();
         }
 
         public static int Count { get { Load(); return _map.Count; } }

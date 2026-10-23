@@ -734,6 +734,8 @@ namespace LanTalk
 
         public void Dispose()
         {
+            // 把攒着的对端缓存落盘，别丢掉最后几秒的记录
+            try { PeerStore.Flush(); } catch { }
             if (_disposed) return;
             _disposed = true;
             try { Leave(); } catch { }

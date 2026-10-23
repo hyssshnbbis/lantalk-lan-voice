@@ -62,6 +62,7 @@ namespace LanTalk
             TestImageE2E();
             TestImageP2P();
             TestAvatarCache();
+            TestHumFix();
             TestSelfUpdate();
             TestRoomProtocol();
             TestUdpProtocol();
@@ -300,6 +301,133 @@ namespace LanTalk
         }
 
         // ---------- 3c. 会议室协议：互相发现 / 离开 ----------
+        /// <summary>工频陷波 + 键盘瞬态抑制：用合成信号量化到底压了多少。</summary>
+        private static void TestHumFix()
+        {
+            List<string> bad = new List<string>();
+            const int N = 16000;   // 1 秒
+
+            try
+            {
+                // ---------- 1) 电流声：50 Hz 基波 + 谐波 + 一段 1 kHz 语音 ----------
+                short[] sig = new short[N];
+                for (int i = 0; i < N; i++)
+                {
+                    double t = (double)i / Rate;
+                    double humSig = 6000 * Math.Sin(2 * Math.PI * 50 * t)
+                               + 3000 * Math.Sin(2 * Math.PI * 100 * t)
+                               + 1500 * Math.Sin(2 * Math.PI * 150 * t);
+                    double voice = 4000 * Math.Sin(2 * Math.PI * 1000 * t);
+                    double v = humSig + voice;
+                    if (v > 32767) v = 32767; else if (v < -32768) v = -32768;
+                    sig[i] = (short)v;
+                }
+
+                HumNotch hum = new HumNotch(Rate);
+                hum.Analyze(sig, N);
+                if (hum.DetectedHz != 50) bad.Add("没识别出 50 Hz 工频（识别为 " + hum.DetectedHz + "）");
+
+                double humBefore = Hum1000Energy(sig, N, 50);
+                double voiceBefore = GoertzelEnergy(sig, N, 1000);
+                short[] filtered = (short[])sig.Clone();
+                hum.Process(filtered, N);
+                double humAfter = Hum1000Energy(filtered, N, 50);
+                double voiceAfter = GoertzelEnergy(filtered, N, 1000);
+
+                double humDb = 10 * Math.Log10((humBefore + 1e-9) / (humAfter + 1e-9));
+                double voiceDb = 10 * Math.Log10((voiceAfter + 1e-9) / (voiceBefore + 1e-9));
+                if (humDb < 12) bad.Add("工频只压了 " + humDb.ToString("F1") + " dB（应 >= 12）");
+                if (voiceDb < -1.5) bad.Add("1 kHz 语音被削了 " + voiceDb.ToString("F2") + " dB（应 > -1.5，即基本无损）");
+
+                // ---------- 2) 60 Hz 也要能识别 ----------
+                short[] sig60 = new short[N];
+                for (int i = 0; i < N; i++)
+                {
+                    double t = (double)i / Rate;
+                    double humSig60 = 6000 * Math.Sin(2 * Math.PI * 60 * t) + 3000 * Math.Sin(2 * Math.PI * 120 * t);
+                    double v = humSig60 + 4000 * Math.Sin(2 * Math.PI * 1000 * t);
+                    if (v > 32767) v = 32767; else if (v < -32768) v = -32768;
+                    sig60[i] = (short)v;
+                }
+                HumNotch hum2 = new HumNotch(Rate);
+                hum2.Analyze(sig60, N);
+                if (hum2.DetectedHz != 60) bad.Add("没识别出 60 Hz 工频（识别为 " + hum2.DetectedHz + "）");
+
+                // ---------- 3) 键盘敲击：稳态低噪 + 几记冲击 ----------
+                Random rnd = new Random(12345);
+                short[] keys = new short[N];
+                for (int i = 0; i < N; i++) keys[i] = (short)(rnd.Next(-300, 300));
+                int[] clickAt = new int[] { 4000, 7000, 10000, 13000 };
+                for (int c = 0; c < clickAt.Length; c++)
+                {
+                    int st = clickAt[c];
+                    for (int i = 0; i < 80 && st + i < N; i++)
+                    {
+                        double env = Math.Exp(-i / 12.0);
+                        keys[st + i] += (short)(env * (rnd.Next(-14000, 14000)));
+                    }
+                }
+
+                short[] keyFiltered = (short[])keys.Clone();
+                ClickGuard cg = new ClickGuard(Rate, 320);
+                for (int off = 0; off + 320 <= N; off += 320)
+                {
+                    short[] frame = new short[320];
+                    Buffer.BlockCopy(keyFiltered, off * 2, frame, 0, 640);
+                    cg.Process(frame, 320);
+                    Buffer.BlockCopy(frame, 0, keyFiltered, off * 2, 640);
+                }
+
+                double clicksBefore = PeakAround(keys, clickAt, 80);
+                double clicksAfter = PeakAround(keyFiltered, clickAt, 80);
+                double duckDb = 20 * Math.Log10((clicksBefore + 1.0) / (clicksAfter + 1.0));
+                if (cg.TriggerCount < clickAt.Length / 2) bad.Add("只命中 " + cg.TriggerCount + " 次冲击（共 " + clickAt.Length + " 次）");
+                if (duckDb < 6) bad.Add("键盘冲击只压了 " + duckDb.ToString("F1") + " dB（应 >= 6）");
+
+                if (bad.Count == 0)
+                {
+                    T.Ok("hum_fix", "工频识别 50/60 Hz 均正确；50 Hz 及谐波压低 " + humDb.ToString("F1") +
+                         " dB，1 kHz 语音变化 " + voiceDb.ToString("F2") + " dB；键盘冲击命中 " +
+                         cg.TriggerCount + " 次，峰值压低 " + duckDb.ToString("F1") + " dB");
+                }
+                else T.Bad("hum_fix", string.Join("；", bad.ToArray()));
+            }
+            catch (Exception ex) { T.Bad("hum_fix", "异常：" + ex.Message); }
+        }
+
+        private static double GoertzelEnergy(short[] x, int len, double freq)
+        {
+            double w = 2.0 * Math.PI * freq / Rate;
+            double c = 2.0 * Math.Cos(w);
+            double s1 = 0, s2 = 0;
+            for (int i = 0; i < len; i++) { double v = x[i] + c * s1 - s2; s2 = s1; s1 = v; }
+            return s1 * s1 + s2 * s2 - c * s1 * s2;
+        }
+
+        private static double Hum1000Energy(short[] x, int len, int f0)
+        {
+            double sum = 0;
+            for (int h = 1; h <= 8; h++) sum += GoertzelEnergy(x, len, f0 * h);
+            return sum;
+        }
+
+        private static double PeakAround(short[] x, int[] centers, int half)
+        {
+            double sum = 0;
+            for (int c = 0; c < centers.Length; c++)
+            {
+                double peak = 0;
+                for (int i = 0; i < half; i++)
+                {
+                    int k = centers[c] + i;
+                    if (k >= x.Length) break;
+                    double a = Math.Abs((int)x[k]);
+                    if (a > peak) peak = a;
+                }
+                sum += peak;
+            }
+            return sum / centers.Length;
+        }
         /// <summary>对端缓存：同一个人的头像，第二次进房不应该再传一遍。</summary>
         private static void TestAvatarCache()
         {
@@ -1560,6 +1688,11 @@ namespace LanTalk
                 AudioPath ap = new AudioPath(net, VoiceCodec.Pcm16, Rate, FrameMs,
                     delegate() { return new ToneSource(Rate, FrameMs); },
                     delegate() { return new NullSink(Rate, FrameMs); });
+
+                // 这是纯编解码往返测试，必须绕过工频陷波/瞬态抑制等前级处理，
+                // 否则锯齿波会被当成工频与冲击而改动，测的就不是编码链路了。
+                ap.HumFilter = false;
+                ap.ClickFilter = false;
 
                 long total = 0, match = 0, frames = 0;
                 long n0 = -1;   // seq=0 帧第一个样本对应的音源样本号（相位标定）

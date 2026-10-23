@@ -1,4 +1,4 @@
-// MainForm.cs —— 图形界面（WinForms，纯代码构建，无设计器文件）
+﻿// MainForm.cs —— 图形界面（WinForms，纯代码构建，无设计器文件）
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -349,7 +349,8 @@ namespace LanTalk
             {
                 DarkChrome.RoundWindowCorners(this);
                 DarkChrome.DarkTitleBar(this);
-                ThemeSweep(this);
+                if (_settings != null) _settings.MainAudioChanged += ApplyNoiseFilters;
+            ThemeSweep(this);
             }
             catch { }
         }
@@ -634,6 +635,8 @@ namespace LanTalk
             _session.PresencePing = true;
 
             _audio.UseNsEngine = _args.UseNsEngine;
+            _audio.HumFilter = Profile.HumFilter;
+            _audio.ClickFilter = Profile.ClickFilter;
             _audio.SetDenoiseLevel(_args.EffectiveDenoise());
             if (_args.NullAudio && !_args.DenoiseSpecified)
                 Log.Write("内置测试音源模式：降噪默认关闭（可用 --denoise 强制开启）");
@@ -1441,6 +1444,15 @@ namespace LanTalk
         }
 
 
+
+        /// <summary>把「噪声处理」开关应用到音频链路（设备切换后也会用到）。</summary>
+        private void ApplyNoiseFilters()
+        {
+            if (_audio == null) return;
+            _audio.HumFilter = Profile.HumFilter;
+            _audio.ClickFilter = Profile.ClickFilter;
+            Log.Write("噪声处理：电流声抑制=" + (Profile.HumFilter ? "开" : "关") + "，键盘声抑制=" + (Profile.ClickFilter ? "开" : "关"));
+        }
         // ==================== 头像 ====================
 
         /// <summary>收到某个成员的头像，存进成员列表并重绘。</summary>

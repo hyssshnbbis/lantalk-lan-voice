@@ -25,7 +25,7 @@ namespace LanTalk
             get
             {
                 return System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LanTalk");
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppPaths.DataFolder);
             }
         }
 
