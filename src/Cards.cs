@@ -154,6 +154,36 @@ namespace LanTalk
         }
 
         /// <summary>把两个选项连成互斥组。</summary>
+        /// <summary>
+        /// 一行「开关 + 标题 + 说明」。开关用 Switch 而不是 CheckBox：
+        /// 开关表达"持续状态"，CheckBox 表达"勾选内容"，前者更适合这类设置项。
+        /// </summary>
+        protected Switch SwitchRow(int x, int y, string title, string desc, int titleW)
+        {
+            Switch sw = new Switch();
+            sw.SetBounds(x, y, 46, 26);
+            Controls.Add(sw);
+
+            Label t = new Label();
+            t.Text = title;
+            t.Font = Theme.FontUi;
+            t.ForeColor = Theme.TextPrimary;
+            t.BackColor = Color.Transparent;
+            t.SetBounds(x + 58, y + 3, titleW, 20);
+            Controls.Add(t);
+
+            if (!string.IsNullOrEmpty(desc))
+            {
+                Label d = new Label();
+                d.Text = desc;
+                d.Font = Theme.FontSmall;
+                d.ForeColor = Theme.TextMuted;
+                d.BackColor = Color.Transparent;
+                d.SetBounds(x + 58 + titleW + 12, y + 6, Width - (x + 58 + titleW + 12) - PadH, 18);
+                Controls.Add(d);
+            }
+            return sw;
+        }
         protected static void LinkOptions(OptionRow a, OptionRow b)
         {
             a.CheckedChanged += delegate { if (a.Checked) b.SetCheckedSilently(false); };
@@ -391,6 +421,33 @@ namespace LanTalk
     }
 
     // ========================= 通话模式与音量 =========================
+    /// <summary>噪声处理：工频陷波、键盘瞬态抑制、耳返试听。三项都是独立开关。</summary>
+    internal sealed class NoiseCard : CardBase
+    {
+        public readonly Switch Hum;
+        public readonly Switch KeyClick;
+        public readonly Switch Side;
+        public readonly Label Status;
+
+        public const int CardW = 828;
+        public const int CardH = 196;
+
+        public NoiseCard(int x, int y) : base("噪声处理", x, y, CardW, CardH)
+        {
+            Small("电流声与键盘敲击是两类特殊噪声，通用降噪压不住，这里单独处理。",
+                  PadH, ContentTop - 4, InnerW, 18);
+
+            int y0 = ContentTop + 22;
+            int rowH = 40;
+            int titleW = 96;
+
+            Hum = SwitchRow(PadH, y0, "电流声抑制", "针对工频嗡声（50/60 Hz 及谐波），自动识别后只挖掉那几个频点", titleW);
+            KeyClick = SwitchRow(PadH, y0 + rowH, "键盘声抑制", "针对敲击类冲击噪声，检测到瞬间能量暴涨时快速压低", titleW);
+            Side = SwitchRow(PadH, y0 + rowH * 2, "耳返试听", "把自己处理后的声音放给自己听。务必戴耳机，外放会啸叫", titleW);
+
+            Status = Small("", PadH, y0 + rowH * 3, InnerW, 18);
+        }
+    }
     internal sealed class ModeCard : CardBase
     {
         public readonly OptionRow Full;

@@ -117,36 +117,9 @@ namespace LanTalk
         public readonly PictureBox AvatarBox;
         public readonly FlatButton AvatarPick, AvatarClear;
         public readonly Label ProfileHint;
-        public readonly Switch HumSw, ClickSw, SideSw;
+        public readonly NoiseCard Noise;
 
         private void FireAudio() { Action h = MainAudioChanged; if (h != null) h(); }
-
-        /// <summary>造一行「开关 + 标题 + 说明」。</summary>
-        private Switch MakeSwitchRow(Control parent, int y, string title, string desc, bool on, EventHandler changed)
-        {
-            Switch sw = new Switch();
-            sw.SetBounds(18, y, 46, 26);
-            sw.SetCheckedSilently(on);
-            sw.CheckedChanged += changed;
-            parent.Controls.Add(sw);
-
-            Label t = new Label();
-            t.Text = title;
-            t.Font = Theme.FontUi;
-            t.ForeColor = Theme.TextPrimary;
-            t.BackColor = Color.Transparent;
-            t.SetBounds(78, y + 4, 150, 20);
-            parent.Controls.Add(t);
-
-            Label d = new Label();
-            d.Text = desc;
-            d.Font = Theme.FontSmall;
-            d.ForeColor = Theme.TextMuted;
-            d.BackColor = Color.Transparent;
-            d.SetBounds(236, y + 6, 560, 18);
-            parent.Controls.Add(d);
-            return sw;
-        }
 
         /// <summary>噪声开关变更时通知外部重新应用到音频链路。</summary>
         public event Action MainAudioChanged;
@@ -199,34 +172,16 @@ namespace LanTalk
 
             Device = new DeviceCard(18, 18);
             Mode = new ModeCard(442, 18);
-            // 噪声处理：三个真正的拨动开关（开关表示"保持某种状态"，按钮语义不同）
-            CardPanel noise = new CardPanel();
-            noise.SetBounds(18, 366, 828, 186);
+            // 噪声处理：卡片本身在 Cards.cs 的 NoiseCard 里，这里只负责接线
+            Noise = new NoiseCard(18, 366);
+            Noise.Hum.SetCheckedSilently(Profile.HumFilter);
+            Noise.KeyClick.SetCheckedSilently(Profile.ClickFilter);
+            Noise.Side.SetCheckedSilently(Profile.Sidetone);
+            Noise.Hum.CheckedChanged += delegate { Profile.HumFilter = Noise.Hum.Checked; FireAudio(); };
+            Noise.KeyClick.CheckedChanged += delegate { Profile.ClickFilter = Noise.KeyClick.Checked; FireAudio(); };
+            Noise.Side.CheckedChanged += delegate { Profile.Sidetone = Noise.Side.Checked; FireAudio(); };
 
-            Label nTitle = new Label();
-            nTitle.Text = "噪声处理";
-            nTitle.Font = Theme.FontTitle;
-            nTitle.ForeColor = Theme.TextPrimary;
-            nTitle.BackColor = Color.Transparent;
-            nTitle.SetBounds(16, 8, 200, 22);
-            noise.Controls.Add(nTitle);
-
-            Label nHint = new Label();
-            nHint.Text = "电流声与键盘敲击是两类特殊噪声，通用降噪压不住，这里单独处理。";
-            nHint.Font = Theme.FontSmall;
-            nHint.ForeColor = Theme.TextMuted;
-            nHint.BackColor = Color.Transparent;
-            nHint.SetBounds(16, 32, 780, 18);
-            noise.Controls.Add(nHint);
-
-            HumSw = MakeSwitchRow(noise, 58, "电流声抑制", "针对工频嗡声（50/60 Hz 及谐波），自动识别后只挖那几个频点",
-                Profile.HumFilter, delegate { Profile.HumFilter = HumSw.Checked; FireAudio(); });
-            ClickSw = MakeSwitchRow(noise, 96, "键盘声抑制", "针对敲击类冲击噪声，检测到瞬间能量暴涨时快速压低",
-                Profile.ClickFilter, delegate { Profile.ClickFilter = ClickSw.Checked; FireAudio(); });
-            SideSw = MakeSwitchRow(noise, 134, "耳返试听", "把自己处理后的声音放给自己听。务必戴耳机，外放会啸叫",
-                Profile.Sidetone, delegate { Profile.Sidetone = SideSw.Checked; FireAudio(); });
-
-            PageSettings.Controls.AddRange(new Control[] { Device, Mode, noise });
+            PageSettings.Controls.AddRange(new Control[] { Device, Mode, Noise });
 
             // 更新页
             PageUpdate = new Panel();
