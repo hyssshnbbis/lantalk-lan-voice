@@ -1141,6 +1141,7 @@ namespace LanTalk
             {
                 if (real != null)
                 {
+                    // 有真头像就只画头像；首字是"没有头像时"的兜底，不能盖在图上
                     GraphicsState gs = g.Save();
                     g.SetClip(ap);
                     g.InterpolationMode = InterpolationMode.HighQualityBicubic;
@@ -1151,14 +1152,13 @@ namespace LanTalk
                 {
                     using (SolidBrush br = new SolidBrush(AvatarColor(name)))
                         g.FillPath(br, ap);
+                    using (StringFormat sf = Cell())
+                    {
+                        sf.Alignment = StringAlignment.Center;
+                        using (SolidBrush br = new SolidBrush(Color.FromArgb(16, 16, 16)))
+                            g.DrawString(name.Substring(0, 1), Theme.FontSmall, br, new RectangleF(ax, ay, d, d), sf);
+                    }
                 }
-            }
-
-            using (StringFormat sf = Cell())
-            {
-                sf.Alignment = StringAlignment.Center;
-                using (SolidBrush br = new SolidBrush(Color.FromArgb(16, 16, 16)))
-                    g.DrawString(name.Substring(0, 1), Theme.FontSmall, br, new RectangleF(ax, ay, d, d), sf);
             }
 
             // 状态点贴右边
