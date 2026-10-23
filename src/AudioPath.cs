@@ -742,7 +742,7 @@ namespace LanTalk
         {
             RemoteChannel c = FindChannel(senderId);
             if (c == null) return;
-            if (percent < 0) percent = 0; else if (percent > 100) percent = 100;
+            if (percent < 0) percent = 0; else if (percent > 200) percent = 200;   // 界面能拉到 200%，这里别再夹在 100
             c.Volume = percent;
         }
 

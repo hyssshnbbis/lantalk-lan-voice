@@ -45,8 +45,9 @@
 | 1.3.2 | **已发布**（正式版） | 自检 26/26，冒烟 6/6 |
 | 1.4.0-beta | **已发布**（pre-release） | 噪声处理 + 耳返 + 成员右键小窗；协议与 1.3.2 一致 |
 | 1.4.0 | **已发布** | 成员看板 + 麦克风增益 + 音量条 + 耳返修复；自检 26/26，冒烟 6/6 |
+| 1.5.0 | **已发布** | 聊天记录可删/可清空 + 电平改满幅线性 + 头像修复；自检 26/26，冒烟 6/6 |
 
-正式版 exe 版本号 **1.4.0.0**（`AssemblyInfo.cs`）；测试版同样 1.4.0.0，靠「· 测试版」后缀与独立数据目录区分。
+正式版 exe 版本号 **1.5.0.0**（`AssemblyInfo.cs`）；测试版同样 1.5.0.0，靠「· 测试版」后缀与独立数据目录区分。
 
 ### 2.3 不要做这些
 
@@ -247,7 +248,9 @@ Avatar=17, AvatarWant=18
 
 **音量与增益（三条独立的路）**：
 - `放音音量` 0–200%（`AudioPath.VolumePercent`，混音后按比例缩放，>100 会削顶）
-- `单成员音量` 0–200%（`Conference.SetMemberVolume` + `RemoteChannel.Volume`，混音时按该路缩放）
+- `单成员音量` 0–200%（`Conference.SetMemberVolume` + `RemoteChannel.Volume` + `AudioPath.SetChannelVolume`，
+  **三处都要夹 0–200**；混音时按该路缩放）。2026-10-23 修过一次：`SetChannelVolume` 还夹在 100，
+  导致界面拉过 100% 日志照写、声音不动——现在自检 `mixer` 里钉了「200% 必须正好 2468 = 1234×2」。
   —— 卡片上点音量图标弹出的那条音量条就是这个，原来上限写死 100，已对齐到 200
 - `麦克风增益` 0–150%（`AudioPath.MicGainPercent`，默认 100），UI 在设置页「通话模式与音量」卡片里，
   存在 `Profile.MicGain`（profile.txt 的 `micgain=`）。处理顺序：工频/键盘 → 降噪 → **增益** → 电平表 → 编码，
@@ -378,7 +381,7 @@ git tag -f v1.4.0 <sha>; git -c credential.helper= push $url refs/tags/v1.4.0
 接手后先跑这几条，确认环境正常：
 
 ```powershell
-.\build.ps1                                                      # 应输出 体积：382.5 KB、零警告
+.\build.ps1                                                      # 应输出 体积：385 KB、零警告
 .\dist\LanTalk.exe --selftest --log '.\dist\selftest.log'        # 应 pass=26 fail=0
 .\tools\ui-smoke-test.ps1                                        # 应 pass=6 fail=0
 ```

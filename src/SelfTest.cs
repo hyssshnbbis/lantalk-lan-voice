@@ -276,7 +276,27 @@ namespace LanTalk
                 short soloVal = (short)(outBuf[0] | (outBuf[1] << 8));
                 if (n3 != FrameBytes || soloVal != 1234) bad.Add("单路搬运不对，实际 " + soloVal);
 
+                // 单路音量：200% 必须正好是 100% 的两倍幅度（1234 → 2468），50% 是一半（617）。
+                // 这条用来钉死"音量百分比就是线性倍数"，别哪天又悄悄换成曲线。
+                short v200 = 0, v50 = 0;
+                ap.RemoveChannel(solo.SenderId);
+                RemoteChannel ch200 = ap.EnsureChannel(0x88888888, new IPEndPoint(IPAddress.Parse("10.0.0.8"), 47800), "V200");
+                ap.SetChannelVolume(ch200.SenderId, 200);
+                for (int i = 0; i < 3; i++) ch200.Buffer.Push(i, MakePcm(1234), FrameBytes);
+                if (mix.Fill(outBuf, 0, FrameBytes) == FrameBytes) v200 = (short)(outBuf[0] | (outBuf[1] << 8));
+                ap.RemoveChannel(ch200.SenderId);
+
+                RemoteChannel ch50 = ap.EnsureChannel(0x77777777, new IPEndPoint(IPAddress.Parse("10.0.0.7"), 47800), "V50");
+                ap.SetChannelVolume(ch50.SenderId, 50);
+                for (int i = 0; i < 3; i++) ch50.Buffer.Push(i, MakePcm(1234), FrameBytes);
+                if (mix.Fill(outBuf, 0, FrameBytes) == FrameBytes) v50 = (short)(outBuf[0] | (outBuf[1] << 8));
+                ap.RemoveChannel(ch50.SenderId);
+
+                if (v200 != 2468) bad.Add("200% 音量应为 2468（两倍），实际 " + v200);
+                if (v50 != 617) bad.Add("50% 音量应为 617（一半），实际 " + v50);
+
                 string detail = "三路混音相加=0 正常，限幅到 " + clip + "，单路直通=" + soloVal +
+                                "，音量 200%/50% = " + v200 + "/" + v50 +
                                 "，通道数=" + ap.ChannelCount + "，混音后电平=" + mix.Peak;
 
                 if (bad.Count == 0) T.Ok("mixer", detail);
