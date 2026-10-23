@@ -961,6 +961,17 @@ namespace LanTalk
             return left + (int)Math.Round(span * ((_value - _min) / (double)range));
         }
 
+        /// <summary>滚轮也能微调（每格 5% 量程），不用非得瞄准滑块。</summary>
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            if (e.Delta != 0)
+            {
+                int step = Math.Max(1, (_max - _min) / 20);
+                Value = _value + (e.Delta > 0 ? step : -step);
+            }
+            base.OnMouseWheel(e);
+        }
+
         protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
         protected override void OnMouseLeave(EventArgs e) { _hover = false; Invalidate(); base.OnMouseLeave(e); }
         protected override void OnMouseDown(MouseEventArgs e)

@@ -375,7 +375,7 @@ namespace LanTalk
                 if (n <= 0) continue;
                 alive++;
                 int chVol = chans[c].Volume;
-                if (chVol < 0) chVol = 0; else if (chVol > 100) chVol = 100;
+                if (chVol < 0) chVol = 0; else if (chVol > 200) chVol = 200;   // 单成员音量也支持到 200%
                 for (int i = 0; i + 1 < n; i += 2)
                 {
                     int s = _tmp[i] | (_tmp[i + 1] << 8);

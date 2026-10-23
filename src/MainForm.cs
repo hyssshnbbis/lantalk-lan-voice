@@ -812,7 +812,7 @@ Log.Write("降噪引擎 " + (_args.UseNsEngine ? "WebRTC NS" : "轻量版"));
 
             DarkSlider slider = new DarkSlider();
             slider.Minimum = 0;
-            slider.Maximum = 100;
+            slider.Maximum = 200;
             slider.Value = m.Volume;
             slider.Width = 208;
             slider.Height = 28;
@@ -903,7 +903,7 @@ Log.Write("降噪引擎 " + (_args.UseNsEngine ? "WebRTC NS" : "轻量版"));
 
             DarkSlider slider = new DarkSlider();
             slider.Minimum = 0;
-            slider.Maximum = 100;
+            slider.Maximum = 200;
             slider.Value = m.Volume;
             slider.Width = 176;
             slider.Height = 28;

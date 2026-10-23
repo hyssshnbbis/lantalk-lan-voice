@@ -417,7 +417,7 @@ namespace LanTalk
             PttButton = Button("按住说话（也可按空格）", PadH, py, InnerW, 34, FlatButton.Look.Normal);
 
             int vy = py + 34 + RowGap + 6;
-            Caption("放音音量", PadH, vy, 60);
+            Caption("放音音量　0–200%", PadH, vy, 140);
             VolVal = Value("100%", Width - PadH - 64, vy, 64);
             Volume = new DarkSlider();
             Volume.Minimum = 0;
@@ -428,7 +428,7 @@ namespace LanTalk
 
             // 麦克风增益：放音音量管"听别人"，这里管"别人听你"
             int gy = vy + 20 + 28 + RowGap + 2;
-            Caption("麦克风增益", PadH, gy, 80);
+            Caption("麦克风增益　0–150%", PadH, gy, 140);
             MicGainVal = Value("100%", Width - PadH - 64, gy, 64);
             MicGain = new DarkSlider();
             MicGain.Minimum = 0;

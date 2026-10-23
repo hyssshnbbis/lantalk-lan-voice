@@ -216,7 +216,7 @@ namespace LanTalk
         {
             Member m = FindByKey(key);
             if (m == null) return;
-            if (percent < 0) percent = 0; else if (percent > 100) percent = 100;
+            if (percent < 0) percent = 0; else if (percent > 200) percent = 200;   // 与「放音音量」一致，0–200%
             m.Volume = percent;
             _audio.SetChannelVolume(m.IdNum, percent);
             RaiseChanged();
