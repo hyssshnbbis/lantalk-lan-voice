@@ -1330,6 +1330,10 @@ namespace LanTalk
 
         protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
         {
+            // 只有"能点的"才给悬停反馈。标题行和「用户音量」是 Enabled=false 的说明行，
+            // 它们被鼠标划过时 Selected 也会变 true（WinForms 的老毛病），
+            // 不挡掉的话文字行也会亮起来，看着像按钮。
+            if (!e.Item.Enabled) return;
             if (!e.Item.Selected && !e.Item.Pressed) return;
             Graphics g = e.Graphics;
             // 横带铺满整行：左右两端贴着菜单边，文字才不会被挤得和别的行对不齐
