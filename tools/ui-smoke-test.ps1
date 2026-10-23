@@ -134,12 +134,10 @@ function Get-PatternStat([string]$logPath) {
 }
 
 # ============================================================
-#  第一段：一对一
+#  第一段：启动检查（一对一通话已整体移除，两个人的房间就是一对一）
 # ============================================================
-Write-Host "=== 第一段：一对一通话 ===" -ForegroundColor Cyan
-$gui = $null; $caller = $null
-$callerLog = Join-Path $outPath 'ui-caller.log'
-Remove-Item $callerLog -ErrorAction SilentlyContinue
+Write-Host "=== 第一段：启动检查 ===" -ForegroundColor Cyan
+$gui = $null
 
 try {
     $gui = Start-Process -FilePath $exe -PassThru -ArgumentList `
@@ -148,61 +146,8 @@ try {
     if ($h -eq [IntPtr]::Zero) { throw "界面窗口没有出现" }
     [void][Ui]::SetForegroundWindow($h); Start-Sleep -Milliseconds 700
     Check 'gui_launch' $true ("窗口已出现，句柄 " + $h)
-
-    $caller = Start-Process -FilePath $exe -PassThru -ArgumentList `
-        '--headless', '--null-audio', '--local-port', "$CallerPort", `
-        '--peer', '127.0.0.1', '--peer-port', "$GuiPort", `
-        '--auto-call', '--duration', '22', '--log', $callerLog
-
-    $ringing = $false
-    for ($i = 0; $i -lt 40; $i++) {
-        Start-Sleep -Milliseconds 250
-        if ([Ui]::HasText($h, '来电振铃中')) { $ringing = $true; break }
-    }
-    [void][Ui]::SetForegroundWindow($h); Start-Sleep -Milliseconds 400
-    Save-Shot $h (Join-Path $outPath 'ui-ringing.png')
-    Check 'gui_incoming_call' $ringing '界面出现「来电振铃中」'
-
-    $answerBtn = [Ui]::FindButton($h, '接听')
-    Check 'gui_answer_button' ($answerBtn -ne [IntPtr]::Zero) '找到「接听」按钮'
-    if ($answerBtn -eq [IntPtr]::Zero) { throw "找不到接听按钮" }
-    [Ui]::Click($answerBtn)
-
-    $inCall = $false
-    for ($i = 0; $i -lt 40; $i++) {
-        Start-Sleep -Milliseconds 250
-        if ([Ui]::HasText($h, '通话中')) { $inCall = $true; break }
-    }
-    Start-Sleep -Milliseconds 1500
-    Save-Shot $h (Join-Path $outPath 'ui-incall.png')
-    Check 'gui_answered' $inCall '点「接听」后界面变成「通话中」'
-
-    $caller.WaitForExit()
-    Start-Sleep -Milliseconds 500
-    $logText = if (Test-Path -LiteralPath $callerLog) { Get-Content -LiteralPath $callerLog -Raw -Encoding UTF8 } else { '' }
-    $ps = Get-PatternStat $callerLog
-    $pattOk = $false; $pattDetail = '没有找到音频校验结果'
-    if ($ps -ne $null) {
-        $pattOk = ($ps.Match -eq $ps.Total) -and ($ps.Total -gt 10000)
-        $pattDetail = "端到端样本校验 " + $ps.Match + "/" + $ps.Total
-    }
-    Check 'gui_audio_end_to_end' $pattOk $pattDetail
-    Check 'gui_call_established' ($logText -match 'reached_call=True') '主叫侧确认通话已建立'
-    $lost = [regex]::Match($logText, 'lost=(\d+)')
-    if ($lost.Success) { Check 'gui_no_packet_loss' ([int]$lost.Groups[1].Value -eq 0) ("丢包 = " + $lost.Groups[1].Value) }
-
-    $hangBtn = [Ui]::FindButton($h, '挂断')
-    if ($hangBtn -ne [IntPtr]::Zero) {
-        [Ui]::Click($hangBtn)
-        $idle = $false
-        for ($i = 0; $i -lt 20; $i++) {
-            Start-Sleep -Milliseconds 250
-            if ([Ui]::HasText($h, '空闲')) { $idle = $true; break }
-        }
-        Check 'gui_hangup' $idle '点「挂断」后界面回到「空闲」'
-    }
 }
-finally { Stop-All @($caller, $gui) }
+finally { Stop-All @($gui) }
 
 # ============================================================
 #  第二段：多人会议室

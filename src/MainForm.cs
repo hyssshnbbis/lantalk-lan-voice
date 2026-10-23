@@ -1,4 +1,4 @@
-// MainForm.cs —— 图形界面（WinForms，纯代码构建，无设计器文件）
+﻿// MainForm.cs —— 图形界面（WinForms，纯代码构建，无设计器文件）
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -30,7 +30,6 @@ namespace LanTalk
         private LocalCard _cardLocal;
         private PeerCard _cardPeer;
         private RoomCard _cardRoom;
-        private StatusCard _cardStatus;
         private MeterCard _cardMeter;
         private DeviceCard _cardDev;
         private ModeCard _cardMode;
@@ -54,7 +53,6 @@ namespace LanTalk
         private FlatButton _btnJoin, _btnLeave, _btnAddManual;
 
         private Label _lblState, _lblPeerState;
-        private FlatButton _btnCall, _btnAnswer;
 
         private DarkSelect _cmbIn, _cmbOut, _cmbCodec, _cmbEngine;
         private Label _lblRecHint;
@@ -193,12 +191,11 @@ namespace LanTalk
             _main.SetBounds(278, 0, 842, 780);
             _main.BackColor = Theme.MainBg;
 
-            _cardStatus = new StatusCard(12, 12, 818);
             // 音频设备与通话模式已搬进设置页；这块空间之后给聊天框，先让日志占住
-            _cardChat = new ChatCard(12, 82, 818, 518);
+            _cardChat = new ChatCard(12, 12, 818, 588);
             _cardLog = new LogCard(12, 612, 818, 156);
 
-            _main.Controls.AddRange(new Control[] { _cardStatus, _cardChat, _cardLog });
+            _main.Controls.AddRange(new Control[] { _cardChat, _cardLog });
         }
 
         // ==================== 把板块控件挂到别名 + 连事件 ====================
@@ -237,12 +234,8 @@ namespace LanTalk
             _btnAddManual.Click += OnAddManualClick;
 
             // 状态
-            _lblState = _cardStatus.State;
-            _lblPeerState = _cardStatus.PeerState;
-            _btnCall = _cardStatus.Call;
-            _btnAnswer = _cardStatus.Answer;
-            _btnCall.Click += OnCallClick;
-            _btnAnswer.Click += OnAnswerClick;
+            _lblState = _cardMembers.Status;
+            _lblPeerState = _cardMembers.PeerState;
 
             // 电平
             _pbIn = _cardMeter.In;
@@ -1355,8 +1348,6 @@ namespace LanTalk
                 if (joined && _rdoPtt.Checked) sub += _pttHeld ? "　● 正在发送" : "　○ 按住空格或按钮说话";
                 _lblPeerState.Text = sub;
 
-                _btnCall.Enabled = false;
-                _btnAnswer.Enabled = false;
                 _btnJoin.Enabled = !joined;
                 _btnLeave.Enabled = joined;
                 _btnAddManual.Enabled = joined;
@@ -1403,10 +1394,6 @@ namespace LanTalk
 
             // 会议模式下呼叫/接听没有意义，直接隐藏；一对一才显示
             bool callUi = !RoomMode;
-            _btnCall.Visible = callUi;
-            _btnAnswer.Visible = callUi;
-            _btnCall.Enabled = callUi && st == CallState.Idle;
-            _btnAnswer.Enabled = callUi && st == CallState.Incoming;
             if (_topBar != null) _topBar.SetHangupEnabled(st != CallState.Idle || RoomMode);
 
             // 对方在线状态

@@ -306,40 +306,6 @@ namespace LanTalk
         }
     }
 
-    // ============================ 状态 ============================
-    internal sealed class StatusCard : CardBase
-    {
-        public readonly Label State;
-        public readonly Label PeerState;
-        public readonly FlatButton Call;
-        public readonly FlatButton Answer;
-
-        public const int CardH = 58;
-
-        public StatusCard(int x, int y, int w) : base("", x, y, w, CardH)
-        {
-            State = new Label();
-            State.Text = "空闲";
-            State.Font = new Font("Microsoft YaHei UI", 14F, FontStyle.Bold);
-            State.ForeColor = Theme.TextPrimary;
-            State.BackColor = System.Drawing.Color.Transparent;
-            State.SetBounds(PadH + 4, 6, 300, 26);
-            Controls.Add(State);
-
-            PeerState = new Label();
-            PeerState.Text = "";
-            PeerState.Font = Theme.FontSmall;
-            PeerState.ForeColor = Theme.TextSecondary;
-            PeerState.BackColor = System.Drawing.Color.Transparent;
-            PeerState.SetBounds(PadH + 6, 32, 470, 18);
-            Controls.Add(PeerState);
-
-            // 挂断已由顶栏胶囊接管，这里只留一对一才用得上的呼叫/接听
-            int bx = w - PadH - 100;
-            Call = Button("呼叫", bx - 208, 11, 100, 34, FlatButton.Look.Primary);
-            Answer = Button("接听", bx - 104, 11, 100, 34, FlatButton.Look.Primary);
-        }
-    }
 
     // ========================== 电平与统计 ==========================
     // 侧栏版：宽度只有 226，所以竖排——两行"标签 + 值 + 满宽电平条"，下面三行紧凑统计。
@@ -707,6 +673,11 @@ namespace LanTalk
 
         private readonly Label _count;
 
+        /// <summary>房间状态（未加入 / 已加入 · N 人）。原来在状态卡上，现在并到这里。</summary>
+        public readonly Label Status;
+        /// <summary>状态副标题：地址、提示、通话时长等。</summary>
+        public readonly Label PeerState;
+
         public const int CardW = 254;
         public const int CardH = 210;
 
@@ -724,8 +695,24 @@ namespace LanTalk
             Controls.Add(_count);
 
             // 列表占满剩余高度，底部留 42 给两个按钮
+            Status = new Label();
+            Status.Text = "未加入";
+            Status.Font = Theme.FontUi;
+            Status.ForeColor = Theme.TextPrimary;
+            Status.BackColor = Color.Transparent;
+            Status.SetBounds(PadH, ContentTop - 2, InnerW, 20);
+            Controls.Add(Status);
+
+            PeerState = new Label();
+            PeerState.Text = "";
+            PeerState.Font = Theme.FontSmall;
+            PeerState.ForeColor = Theme.TextMuted;
+            PeerState.BackColor = Color.Transparent;
+            PeerState.SetBounds(PadH, ContentTop + 18, InnerW, 18);
+            Controls.Add(PeerState);
+
             RoundedSurface surface = new RoundedSurface();
-            surface.SetBounds(PadH, ContentTop, InnerW, h - ContentTop - 42);
+            surface.SetBounds(PadH, ContentTop + 40, InnerW, h - ContentTop - 40 - 8);
             surface.Padding = new Padding(5, 4, 5, 5);
 
             List = new MemberListView();
