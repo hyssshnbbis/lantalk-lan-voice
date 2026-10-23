@@ -894,7 +894,7 @@ namespace LanTalk
             }
 
             // 说话绿圈：闭麦时换成红圈，免得"闭着麦还在发光"
-            if (Level > 4 && !Muted)
+            if (Level > 1 && !Muted)
             {
                 int alpha = Math.Min(230, 70 + Level * 2);
                 using (Pen pen = new Pen(Color.FromArgb(alpha, Theme.Accent), 3f))

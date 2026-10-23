@@ -402,7 +402,8 @@ namespace LanTalk
                 buffer[offset + i * 2] = (byte)(v & 0xFF);
                 buffer[offset + i * 2 + 1] = (byte)((v >> 8) & 0xFF);
             }
-            _peak = (int)(100.0 * Math.Sqrt(peak / 32768.0));
+            // 与 Peak() 保持同一把尺子：满幅线性
+            _peak = (int)(peak * 100L / 32768);
             if (_peak > 100) _peak = 100;
             return count;
         }
@@ -979,8 +980,10 @@ namespace LanTalk
                 if (s < 0) s = -s;
                 if (s > peak) peak = s;
             }
-            double r = peak / 32768.0;
-            int lvl = (int)(100.0 * Math.Sqrt(r));
+            // 电平按"满幅线性"算：100% 就是满刻度 32768。
+            // 以前用开方（sqrt）做感知压缩，好处是轻声也看得见，坏处是增益与读数不成比例——
+            // 麦克风增益从 100% 拉到 150%，读数只从 48% 涨到 67%，看着像"没效果"。
+            int lvl = (int)(peak * 100L / 32768);
             return lvl > 100 ? 100 : lvl;
         }
     }

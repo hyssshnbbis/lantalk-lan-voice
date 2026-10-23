@@ -991,10 +991,10 @@ Log.Write("降噪引擎 " + (_args.UseNsEngine ? "WebRTC NS" : "轻量版"));
                         MemberView v = rows[i];
                         ListViewItem it = new ListViewItem(string.IsNullOrEmpty(v.Name) ? "(未命名)" : v.Name);
                         it.SubItems.Add(v.IsSelf ? MemberBoardCard.SelfKey : v.Key);
-                        it.SubItems.Add(v.Muted ? "已静音" : (v.Level >= 8 ? "正在说话" : (v.IsSelf ? "我" : "在线")));
+                        it.SubItems.Add(v.Muted ? "已静音" : (v.Level >= 3 ? "正在说话" : (v.IsSelf ? "我" : "在线")));
                         it.Tag = v.IsSelf ? MemberBoardCard.SelfKey : v.Key;
                         if (v.Muted) it.ForeColor = Color.Gray;
-                        else if (v.Level >= 8) it.ForeColor = Theme.Accent;
+                        else if (v.Level >= 3) it.ForeColor = Theme.Accent;
                         if (v.Avatar != null && it.Tag != null) _lstMembers.Avatars[it.Tag.ToString()] = v.Avatar;
                         _lstMembers.Items.Add(it);
                     }
