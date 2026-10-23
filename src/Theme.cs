@@ -1244,6 +1244,114 @@ namespace LanTalk
         public override Color MenuItemPressedGradientBegin { get { return Color.FromArgb(56, 56, 56); } }
         public override Color MenuItemPressedGradientEnd { get { return Color.FromArgb(56, 56, 56); } }
     }
+    /// <summary>
+    /// 真正的拨动开关：一条圆角轨道 + 一个圆形滑块。
+    ///
+    /// 之前用 FlatButton + Selected 表示开关，语义是错的——按钮是"按一下做事"，
+    /// 开关是"保持某个状态"。这里做成独立控件，Checked 表示状态，点击翻转。
+    /// </summary>
+    internal sealed class Switch : Control
+    {
+        private bool _checked;
+        private float _pos;          // 滑块位置 0..1，用来做过渡
+        private readonly Timer _anim;
+
+        public event EventHandler CheckedChanged;
+
+        public Switch()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint
+                   | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw
+                   | ControlStyles.SupportsTransparentBackColor, true);
+            Size = new Size(46, 26);
+            Cursor = Cursors.Hand;
+            BackColor = Color.Transparent;
+            TabStop = true;
+
+            _anim = new Timer();
+            _anim.Interval = 15;
+            _anim.Tick += delegate
+            {
+                float target = _checked ? 1f : 0f;
+                float d = target - _pos;
+                if (Math.Abs(d) < 0.02f) { _pos = target; _anim.Stop(); }
+                else _pos += d * 0.35f;
+                Invalidate();
+            };
+        }
+
+        public bool Checked
+        {
+            get { return _checked; }
+            set
+            {
+                if (_checked == value) return;
+                _checked = value;
+                _anim.Start();
+                EventHandler h = CheckedChanged;
+                if (h != null) h(this, EventArgs.Empty);
+            }
+        }
+
+        /// <summary>不触发事件、不播放动画地设置状态（用于从配置初始化）。</summary>
+        public void SetCheckedSilently(bool value)
+        {
+            _checked = value;
+            _pos = value ? 1f : 0f;
+            Invalidate();
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (e.Button == MouseButtons.Left) Checked = !_checked;
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+            if (e.KeyCode == Keys.Space || e.KeyCode == Keys.Enter) Checked = !_checked;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            int w = Width, h = Height;
+            int trackH = h - 6;
+            int radius = trackH / 2;
+
+            Color off = Color.FromArgb(58, 58, 58);
+            Color on = Theme.Accent;
+            int r = (int)(off.R + (on.R - off.R) * _pos);
+            int gg = (int)(off.G + (on.G - off.G) * _pos);
+            int b = (int)(off.B + (on.B - off.B) * _pos);
+            Color trackCol = Color.FromArgb(r, gg, b);
+
+            Rectangle track = new Rectangle(0, 3, w - 1, trackH);
+            using (GraphicsPath path = Theme.RoundRect(track, radius))
+            using (SolidBrush br = new SolidBrush(trackCol))
+                g.FillPath(br, path);
+
+            int knobD = trackH - 6;
+            int x0 = 3, x1 = w - 3 - knobD;
+            int kx = (int)(x0 + (x1 - x0) * _pos);
+            Rectangle knob = new Rectangle(kx, 6, knobD, knobD);
+            using (SolidBrush kb = new SolidBrush(Color.FromArgb(245, 245, 245)))
+                g.FillEllipse(kb, knob);
+
+            if (Focused)
+                using (Pen fp = new Pen(Color.FromArgb(90, Theme.Accent), 1))
+                    g.DrawPath(fp, Theme.RoundRect(track, radius));
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && _anim != null) { _anim.Stop(); _anim.Dispose(); }
+            base.Dispose(disposing);
+        }
+    }
     internal static class FieldStyle
     {
         public static void Apply(TextBox t)
