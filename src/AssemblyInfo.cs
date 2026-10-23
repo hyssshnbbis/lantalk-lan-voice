@@ -8,6 +8,12 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyProduct("LanTalk")]
 [assembly: AssemblyCompany("LanTalk")]
 [assembly: AssemblyCopyright("Copyright © 2025")]
+// 测试版用独立版本号，便于在「详细信息」里一眼区分，也不会和正式版混淆
+#if PREVIEW
+[assembly: AssemblyVersion("1.4.0.0")]
+[assembly: AssemblyFileVersion("1.4.0.0")]
+#else
 [assembly: AssemblyVersion("1.3.2.0")]
 [assembly: AssemblyFileVersion("1.3.2.0")]
+#endif
 [assembly: ComVisible(false)]
