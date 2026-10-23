@@ -75,9 +75,54 @@ namespace LanTalk
                 }
                 catch { }
 
-                string line = when.ToString("yyyy-MM-dd HH:mm:ss") + "|" + (self ? "1" : "0") + "|" +
-                              Escape(who) + "|" + Escape(text) + "\r\n";
-                System.IO.File.AppendAllText(path, line, Encoding.UTF8);
+                System.IO.File.AppendAllText(path, LineOf(when, who, text, self) + "\r\n", Encoding.UTF8);
+            }
+            catch { }
+        }
+
+        /// <summary>落盘时的一行（不含换行）。删除时按同一格式找那一行。</summary>
+        private static string LineOf(DateTime when, string who, string text, bool self)
+        {
+            return when.ToString("yyyy-MM-dd HH:mm:ss") + "|" + (self ? "1" : "0") + "|" +
+                   Escape(who) + "|" + Escape(text);
+        }
+
+        /// <summary>
+        /// 删掉一条本地记录：按「时间|自己|名字|正文」重建那一行，删掉第一处匹配。
+        /// 只动本机的 chat.log，对方那边的记录不受影响。返回是否真的删到了。
+        /// </summary>
+        public static bool Delete(ChatMsg m)
+        {
+            if (m == null || m.Image != null) return false;   // 图片本来就不进记录
+            try
+            {
+                string path = FilePath;
+                if (!System.IO.File.Exists(path)) return false;
+
+                string target = LineOf(m.When, m.Who, m.Text, m.Self);
+                string[] all = System.IO.File.ReadAllLines(path, Encoding.UTF8);
+                System.Collections.Generic.List<string> keep = new System.Collections.Generic.List<string>();
+                bool removed = false;
+                for (int i = 0; i < all.Length; i++)
+                {
+                    if (!removed && all[i] == target) { removed = true; continue; }
+                    keep.Add(all[i]);
+                }
+                if (!removed) return false;
+                System.IO.File.WriteAllLines(path, keep.ToArray(), Encoding.UTF8);
+                return true;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>清空本地记录：连滚动备份 .bak 一起删掉。</summary>
+        public static void Clear()
+        {
+            try { if (System.IO.File.Exists(FilePath)) System.IO.File.Delete(FilePath); } catch { }
+            try
+            {
+                string bak = FilePath + ".bak";
+                if (System.IO.File.Exists(bak)) System.IO.File.Delete(bak);
             }
             catch { }
         }

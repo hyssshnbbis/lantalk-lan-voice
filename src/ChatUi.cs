@@ -155,6 +155,46 @@ namespace LanTalk
 
         public int Count { get { return _msgs.Count; } }
 
+        /// <summary>右键删掉一条之后抛（界面已经移除了）；调用方负责同步本地记录文件。</summary>
+        public event Action<ChatMsg> MsgDeleted;
+
+        /// <summary>右键点了「清空聊天记录」：由调用方确认后再调 ClearMessages()。</summary>
+        public event Action ClearRequested;
+
+        /// <summary>删掉一条消息（只影响本机显示），删到了就抛 MsgDeleted。</summary>
+        public bool DeleteMessage(ChatMsg m)
+        {
+            if (m == null) return false;
+            int i = _msgs.IndexOf(m);
+            if (i < 0) return false;
+            _msgs.RemoveAt(i);
+            Relayout();
+            Action<ChatMsg> h = MsgDeleted;
+            if (h != null) h(m);
+            return true;
+        }
+
+        /// <summary>清空消息流（调用方确认后调）。</summary>
+        public void ClearMessages()
+        {
+            _msgs.Clear();
+            _scroll = 0;
+            _atBottom = true;
+            Relayout();
+        }
+
+        /// <summary>鼠标落在第几条消息上（-1 表示没落在任何消息上）。</summary>
+        private int IndexAt(Point p)
+        {
+            for (int i = 0; i < _tops.Count && i < _msgs.Count; i++)
+            {
+                int y = _tops[i] - _scroll;
+                if (p.Y < y) break;
+                if (p.Y <= y + _heights[i]) return i;
+            }
+            return -1;
+        }
+
         public void AddRange(IEnumerable<ChatMsg> list)
         {
             foreach (ChatMsg m in list) _msgs.Add(m);
@@ -286,36 +326,59 @@ namespace LanTalk
             Invalidate();
         }
 
+        private static ToolStripMenuItem MenuItem(string text)
+        {
+            ToolStripMenuItem mi = new ToolStripMenuItem(text);
+            mi.ForeColor = Theme.TextPrimary;
+            mi.Padding = new Padding(DarkMenu.TextPad, 4, DarkMenu.TextPad, 4);
+            return mi;
+        }
+
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
             if (e.Button != MouseButtons.Right) return;
 
-            for (int i = _imgHitRect.Count - 1; i >= 0; i--)
+            int idx = IndexAt(e.Location);
+            ChatMsg hit = (idx >= 0 && idx < _msgs.Count) ? _msgs[idx] : null;
+
+            ContextMenuStrip menu = new ContextMenuStrip();
+            DarkMenu.Apply(menu);
+
+            if (hit != null && hit.Image != null)
             {
-                if (!_imgHitRect[i].Contains(e.Location)) continue;
-                int idx = _imgHitIdx[i];
-                if (idx < 0 || idx >= _msgs.Count || _msgs[idx].Image == null) return;
-                byte[] data = _msgs[idx].Image;
-
-                ContextMenuStrip menu = new ContextMenuStrip();
-                DarkMenu.Apply(menu);
-
-                ToolStripMenuItem miView = new ToolStripMenuItem("查看原图");
-                miView.ForeColor = Theme.TextPrimary;
-                miView.Padding = new Padding(10, 3, 14, 3);
+                byte[] data = hit.Image;
+                ToolStripMenuItem miView = MenuItem("查看原图");
                 miView.Click += delegate { ImageViewer.Show(this, data); };
-
-                ToolStripMenuItem miSave = new ToolStripMenuItem("保存图片…");
-                miSave.ForeColor = Theme.TextPrimary;
-                miSave.Padding = new Padding(10, 3, 14, 3);
+                ToolStripMenuItem miSave = MenuItem("保存图片…");
                 miSave.Click += delegate { ImageSaver.Save(FindForm(), data); };
-
                 menu.Items.Add(miView);
                 menu.Items.Add(miSave);
-                menu.Show(this, e.Location);
-                return;
+                menu.Items.Add(new ToolStripSeparator());
             }
+
+            if (hit != null)
+            {
+                ChatMsg target = hit;     // 捕获对象而不是下标：期间来了新消息也不会删错
+                ToolStripMenuItem miDel = MenuItem("删除这条");
+                miDel.Click += delegate
+                {
+                    if (DeleteMessage(target) && target.Image == null)
+                        Log.Write("已删除一条聊天记录（本机）。");
+                };
+                menu.Items.Add(miDel);
+                menu.Items.Add(new ToolStripSeparator());
+            }
+
+            ToolStripMenuItem miClear = MenuItem("清空聊天记录");
+            miClear.Click += delegate
+            {
+                Action h = ClearRequested;
+                if (h != null) h();
+            };
+            menu.Items.Add(miClear);
+
+            menu.Show(this, e.Location);
         }
         protected override void OnMouseClick(MouseEventArgs e)
         {

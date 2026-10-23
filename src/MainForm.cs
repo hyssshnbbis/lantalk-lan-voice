@@ -155,6 +155,7 @@ namespace LanTalk
             // 就按参数意图切模式，免得命令行场景被界面默认值带偏。
 
             try { SelfUpdate.CleanupOld(Application.ExecutablePath); } catch { }
+            BindChatHistoryActions();
             LoadChatHistory();
         }
 
