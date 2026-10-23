@@ -75,8 +75,7 @@ namespace LanTalk
         private Label _lblStats;
 
         private TextBox _txtLog;
-        private ListView _lstMembers;
-        private FlatButton _btnMuteMember, _btnRemoveMember;
+        private MemberListView _lstMembers;
 
         private System.Windows.Forms.Timer _tick;
         private UdpPeer _net;
@@ -304,11 +303,8 @@ namespace LanTalk
 
             _txtLog = _cardLog.Log;
             _lstMembers = _cardMembers.List;
-            _btnMuteMember = _cardMembers.MuteButton;
-            _btnRemoveMember = _cardMembers.RemoveButton;
+            _lstMembers.MemberMenuRequested += ShowMemberMenu;
             _lstMembers.SelectedIndexChanged += OnMemberSelected;
-            _btnMuteMember.Click += OnMuteMemberClick;
-            _btnRemoveMember.Click += OnRemoveMemberClick;
             _lstMembers.ForeColor = Theme.TextPrimary;
         }
 
@@ -804,36 +800,68 @@ namespace LanTalk
             RefreshMemberList();
         }
 
+        /// <summary>右键成员弹出小窗：单独调这个人的音量、单独静音。
+        /// 只做本项目有的功能——私信、禁言、移出频道之类不属于这个软件。</summary>
+        private void ShowMemberMenu(string key)
+        {
+            if (_conference == null || string.IsNullOrEmpty(key)) return;
+            Member m = _conference.MemberByKey(key);
+            if (m == null) return;
+
+            string title = string.IsNullOrEmpty(m.Name) ? "成员" : m.Name;
+
+            ContextMenuStrip menu = new ContextMenuStrip();
+            menu.Renderer = new ToolStripProfessionalRenderer(new DarkMenuColors());
+            menu.BackColor = Color.FromArgb(34, 34, 34);
+            menu.ForeColor = Theme.TextPrimary;
+            menu.Font = Theme.FontUi;
+            menu.ShowImageMargin = false;
+            menu.Padding = new Padding(0, 6, 0, 6);
+            menu.MinimumSize = new Size(240, 0);
+
+            ToolStripLabel head = new ToolStripLabel(title);
+            head.ForeColor = Theme.TextMuted;
+            head.Padding = new Padding(12, 4, 12, 4);
+            menu.Items.Add(head);
+            menu.Items.Add(new ToolStripSeparator());
+
+            ToolStripMenuItem mute = new ToolStripMenuItem("静音");
+            mute.CheckOnClick = true;
+            mute.Checked = m.Muted;
+            mute.Padding = new Padding(12, 5, 12, 5);
+            mute.Click += delegate { if (_conference != null) _conference.SetMemberMuted(key, mute.Checked); };
+            menu.Items.Add(mute);
+
+            menu.Items.Add(new ToolStripSeparator());
+
+            ToolStripLabel volLabel = new ToolStripLabel("用户音量   " + m.Volume + "%");
+            volLabel.ForeColor = Theme.TextSecondary;
+            volLabel.Padding = new Padding(12, 4, 12, 2);
+            menu.Items.Add(volLabel);
+
+            DarkSlider slider = new DarkSlider();
+            slider.Minimum = 0;
+            slider.Maximum = 100;
+            slider.Value = m.Volume;
+            slider.Width = 208;
+            slider.Height = 28;
+
+            ToolStripControlHost host = new ToolStripControlHost(slider);
+            host.Padding = new Padding(10, 0, 10, 8);
+            slider.ValueChanged += delegate
+            {
+                volLabel.Text = "用户音量   " + slider.Value + "%";
+                if (_conference != null) _conference.SetMemberVolume(key, slider.Value);
+            };
+            menu.Items.Add(host);
+
+            menu.Show(_lstMembers, _lstMembers.PointToClient(Cursor.Position));
+        }
+
         private void OnMemberSelected(object sender, EventArgs e)
         {
-            string key = SelectedMemberKey();
-            bool has = key.Length > 0;
-            if (_btnMuteMember != null) _btnMuteMember.Enabled = has;
-            if (_btnRemoveMember != null) _btnRemoveMember.Enabled = has;
-            if (has && _btnMuteMember != null)
-            {
-                Member m = FindMember(key);
-                if (m != null) _btnMuteMember.Text = m.Muted ? "取消静音" : "静音选中";
-            }
-        }
-
-        private void OnMuteMemberClick(object sender, EventArgs e)
-        {
-            string key = SelectedMemberKey();
-            if (key.Length == 0 || _conference == null) return;
-            Member m = FindMember(key);
-            if (m == null) return;
-            _conference.SetMemberMuted(key, !m.Muted);
-            Log.Write((m.Muted ? "已取消静音：" : "已静音：") + key);
-            RefreshMemberList();
-        }
-
-        private void OnRemoveMemberClick(object sender, EventArgs e)
-        {
-            string key = SelectedMemberKey();
-            if (key.Length == 0 || _conference == null) return;
-            _conference.RemoveMember(key);
-            RefreshMemberList();
+            // 成员行不再有"静音选中/移除选中"按钮，音量和静音改由右键小窗单独设置。
+            // 这里保留空实现，因为 ListView 仍会派发 SelectedIndexChanged。
         }
 
         private string SelectedMemberKey()

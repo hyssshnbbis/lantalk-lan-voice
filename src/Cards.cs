@@ -558,6 +558,28 @@ namespace LanTalk
             Columns.Add("成员", 200);
         }
 
+        /// <summary>右键某个成员时触发，参数是成员 Key。</summary>
+        public event Action<string> MemberMenuRequested;
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (e.Button != MouseButtons.Right) return;
+
+            ListViewItem hit = GetItemAt(e.X, e.Y);
+            if (hit == null) return;
+
+            SelectedItems.Clear();
+            hit.Selected = true;
+            Invalidate();
+
+            object key = hit.Tag;
+            if (key == null) return;
+
+            Action<string> h = MemberMenuRequested;
+            if (h != null) h(key.ToString());
+        }
+
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
@@ -682,8 +704,6 @@ namespace LanTalk
     internal sealed class MembersCard : CardBase
     {
         public readonly MemberListView List;
-        public readonly FlatButton MuteButton;
-        public readonly FlatButton RemoveButton;
 
         private readonly Label _count;
 
@@ -712,8 +732,6 @@ namespace LanTalk
             List.Dock = DockStyle.Fill;
             surface.Controls.Add(List);
 
-            MuteButton = Button("静音选中", PadH, h - 36, 108, 24, FlatButton.Look.Normal);
-            RemoveButton = Button("移除选中", PadH + 118, h - 36, 108, 24, FlatButton.Look.Normal);
 
             Controls.Add(surface);
         }

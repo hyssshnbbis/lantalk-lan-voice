@@ -228,6 +228,8 @@ namespace LanTalk
         public JitterBuffer Buffer;
         public string Name = "";
         public volatile bool Muted;
+        /// <summary>这个人单独的音量百分比（0..100），100 为原始音量。</summary>
+        public volatile int Volume = 100;
         public long Received;
         public volatile int Level;
         public DateTime LastSeenUtc = DateTime.UtcNow;
@@ -369,11 +371,13 @@ namespace LanTalk
                 catch { n = 0; }
                 if (n <= 0) continue;
                 alive++;
+                int chVol = chans[c].Volume;
+                if (chVol < 0) chVol = 0; else if (chVol > 100) chVol = 100;
                 for (int i = 0; i + 1 < n; i += 2)
                 {
                     int s = _tmp[i] | (_tmp[i + 1] << 8);
                     if (s > 32767) s -= 65536;
-                    _acc[i >> 1] += s;
+                    _acc[i >> 1] += chVol == 100 ? s : (s * chVol) / 100;
                 }
             }
 
@@ -720,6 +724,15 @@ namespace LanTalk
             Interlocked.Add(ref _retiredPlayed, gone.Buffer.Played);
             Interlocked.Add(ref _retiredConcealed, gone.Buffer.Concealed);
             return true;
+        }
+
+        /// <summary>单独设置某个人的音量（0..100）。</summary>
+        public void SetChannelVolume(uint senderId, int percent)
+        {
+            RemoteChannel c = FindChannel(senderId);
+            if (c == null) return;
+            if (percent < 0) percent = 0; else if (percent > 100) percent = 100;
+            c.Volume = percent;
         }
 
         public void SetChannelMuted(uint senderId, bool muted)

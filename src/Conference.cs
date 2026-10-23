@@ -25,6 +25,9 @@ namespace LanTalk
         public IPEndPoint EndPoint;
         public DateTime LastSeenUtc = DateTime.UtcNow;
         public bool Muted;
+
+        /// <summary>单独音量 0..100，只影响本机播放。</summary>
+        public int Volume = 100;
         public int Level;
         public long Received;
 
@@ -195,6 +198,21 @@ namespace LanTalk
             _audio.SetChannelMuted(m.IdNum, muted);
             RaiseChanged();
         }
+
+        /// <summary>单独设置某个成员的音量（0..100），只影响本机播放。</summary>
+        public void SetMemberVolume(string key, int percent)
+        {
+            Member m = FindByKey(key);
+            if (m == null) return;
+            if (percent < 0) percent = 0; else if (percent > 100) percent = 100;
+            m.Volume = percent;
+            _audio.SetChannelVolume(m.IdNum, percent);
+            RaiseChanged();
+            Log("音量：" + (string.IsNullOrEmpty(m.Name) ? m.Key : m.Name) + " → " + percent + "%");
+        }
+
+        /// <summary>按 Key 取成员（供界面查询当前音量/静音状态）。</summary>
+        public Member MemberByKey(string key) { return FindByKey(key); }
 
         private Member FindByKey(string key)
         {
