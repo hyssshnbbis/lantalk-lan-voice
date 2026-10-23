@@ -428,11 +428,11 @@ namespace LanTalk
 
             // 麦克风增益：放音音量管"听别人"，这里管"别人听你"
             int gy = vy + 20 + 28 + RowGap + 2;
-            Caption("麦克风增益　0–150%", PadH, gy, 140);
+            Caption("麦克风增益　0–400%", PadH, gy, 140);
             MicGainVal = Value("100%", Width - PadH - 64, gy, 64);
             MicGain = new DarkSlider();
             MicGain.Minimum = 0;
-            MicGain.Maximum = 150;
+            MicGain.Maximum = 400;
             MicGain.Value = 100;
             MicGain.SetBounds(PadH, gy + 20, InnerW, 28);
             Controls.Add(MicGain);

@@ -57,7 +57,10 @@ namespace LanTalk
         }
 
         /// <summary>键盘等冲击噪声抑制，默认开。</summary>
-        /// <summary>麦克风增益百分比 0..150。100 = 原样，>100 会放大（可能削顶）。</summary>
+        /// <summary>
+        /// 麦克风增益百分比 0..400（0–+12 dB）。100 = 原样。
+        /// 上限给到 400 是因为入耳式/线控麦克风普遍很小声，150% 只够 +3.5 dB，压不住。
+        /// </summary>
         public static int MicGain
         {
             get { return _micGain; }
@@ -65,7 +68,7 @@ namespace LanTalk
             {
                 int v = value;
                 if (v < 0) v = 0;
-                if (v > 150) v = 150;
+                if (v > 400) v = 400;
                 if (v == _micGain) return;
                 _micGain = v;
                 Save();
@@ -187,7 +190,7 @@ namespace LanTalk
                     else if (k == "humfilter") _humFilter = v != "0";
                     else if (k == "clickfilter") _clickFilter = v != "0";
                     else if (k == "sidetone") _sidetone = v != "0";
-            else if (k == "micgain") { int g; if (int.TryParse(v, out g)) { if (g < 0) g = 0; if (g > 150) g = 150; _micGain = g; } }
+            else if (k == "micgain") { int g; if (int.TryParse(v, out g)) { if (g < 0) g = 0; if (g > 400) g = 400; _micGain = g; } }
                 }
             }
             catch { }

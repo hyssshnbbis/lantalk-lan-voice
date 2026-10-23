@@ -447,7 +447,7 @@ namespace LanTalk
         /// <summary>耳返：把处理后的麦克风声音混进本地播放，用来自己试听降噪效果。</summary>
         public bool Sidetone;
 
-        /// <summary>麦克风增益百分比 0..150：100 原样，&gt;100 放大（可能削顶）。</summary>
+        /// <summary>麦克风增益百分比 0..400（0–+12 dB）：100 原样，&gt;100 放大（可能削顶）。</summary>
         public int MicGainPercent = 100;
 
         /// <summary>电流声抑制（工频陷波）。</summary>
@@ -801,7 +801,7 @@ namespace LanTalk
             int g = MicGainPercent;
             if (g == 100) return;
             if (g < 0) g = 0;
-            if (g > 150) g = 150;
+            if (g > 400) g = 400;
             for (int i = 0; i + 1 < len; i += 2)
             {
                 int s = pcm[i] | (pcm[i + 1] << 8);
