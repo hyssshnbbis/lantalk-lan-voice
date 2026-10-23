@@ -485,6 +485,232 @@ namespace LanTalk
     /// 成员列表行：圆形头像（名字首字）+ 名字 + 右侧状态点。
     /// 状态色：绿=正在说话，橙=已静音，灰=在线。
     /// </summary>
+    /// <summary>成员卡片容器：自动换行排列，超高就竖向滚动。</summary>
+    internal sealed class MemberCardPanel : Panel
+    {
+        public MemberCardPanel()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint
+                   | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            AutoScroll = true;
+            BackColor = Color.Transparent;
+        }
+
+        /// <summary>清空并重建卡片，返回新建的卡片列表。</summary>
+        public System.Collections.Generic.List<MemberCard> Rebuild(System.Collections.Generic.IList<MemberCard> items)
+        {
+            SuspendLayout();
+            try
+            {
+                for (int i = Controls.Count - 1; i >= 0; i--) { Controls[i].Dispose(); }
+                int gap = 10;
+                int avail = Width - SystemInformation.VerticalScrollBarWidth - gap;
+                int perRow = Math.Max(1, (avail + gap) / (MemberCard.CardW + gap));
+                for (int i = 0; i < items.Count; i++)
+                {
+                    MemberCard c = items[i];
+                    int col = i % perRow, row = i / perRow;
+                    c.SetBounds(gap + col * (MemberCard.CardW + gap), gap + row * (MemberCard.CardH + gap),
+                                MemberCard.CardW, MemberCard.CardH);
+                    Controls.Add(c);
+                }
+            }
+            finally { ResumeLayout(); }
+            return null;
+        }
+    }
+    /// <summary>
+    /// 大头像成员卡：圆角大图 + 名字 + 副标题 + 一行图标。
+    ///
+    /// 只包含本项目真正有的功能：
+    ///   自己卡片  闭麦 / 静音 / 退出
+    ///   别人卡片  音量 / 静音
+    /// 表情包、共享设备音频、屏幕共享这些没有的功能不做。
+    /// 说话时头像外圈跟着电平发绿光。
+    /// </summary>
+    internal sealed class MemberCard : Control
+    {
+        public const int CardW = 176;
+        public const int CardH = 232;
+
+        public string MemberKey = "";
+        public string DisplayName = "";
+        public string Sub = "";
+        public bool IsSelf;
+        public bool Muted;
+        public bool SpeakerMuted;
+        public int Level;          // 0..100，说话电平
+        public int Volume = 100;
+        public Image Avatar;
+
+        /// <summary>点图标时抛出：mic / speaker / leave / menu。</summary>
+        public event Action<string, string> IconClicked;
+
+        private const int Pad = 14;
+        private const int Av = 148;
+        private static readonly Rectangle RAv = new Rectangle(Pad, Pad, Av, Av);
+        private static readonly Rectangle RIcons = new Rectangle(Pad, 206, Av, 24);
+        private string _hot = "";
+
+        public MemberCard()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint
+                   | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            Size = new Size(CardW, CardH);
+            BackColor = Color.Transparent;
+            Cursor = Cursors.Default;
+        }
+
+        /// <summary>三/两个图标的位置（等分 Av 宽度）。</summary>
+        private Rectangle IconRect(int index, int total)
+        {
+            int w = 34;
+            int gap = 8;
+            int totalW = total * w + (total - 1) * gap;
+            int x = RIcons.X + (RIcons.Width - totalW) / 2 + index * (w + gap);
+            return new Rectangle(x, RIcons.Y, w, 24);
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            string hit = HitIcon(e.Location);
+            if (hit != _hot) { _hot = hit; Cursor = hit.Length > 0 ? Cursors.Hand : Cursors.Default; Invalidate(); }
+        }
+
+        private string HitIcon(Point p)
+        {
+            string[] keys = IsSelf ? new string[] { "mic", "speaker", "leave" } : new string[] { "volume", "mute" };
+            for (int i = 0; i < keys.Length; i++) if (IconRect(i, keys.Length).Contains(p)) return keys[i];
+            return "";
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (e.Button == MouseButtons.Right)
+            {
+                Action<string, string> h = IconClicked;
+                if (h != null) h(MemberKey, "menu");
+                return;
+            }
+            string key = HitIcon(e.Location);
+            if (key.Length == 0) return;
+            Action<string, string> cb = IconClicked;
+            if (cb != null) cb(MemberKey, key);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            using (GraphicsPath bg = Theme.RoundRect(new Rectangle(0, 0, Width - 1, Height - 1), 12))
+            using (SolidBrush br = new SolidBrush(Color.FromArgb(36, 36, 36)))
+                g.FillPath(br, bg);
+
+            // 头像：有图就画图，没有就画首字方块
+            using (GraphicsPath ap = Theme.RoundRect(RAv, 16))
+            {
+                g.SetClip(ap);
+                if (Avatar != null)
+                {
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.DrawImage(Avatar, RAv);
+                }
+                else
+                {
+                    using (SolidBrush br = new SolidBrush(AvatarColor(DisplayName)))
+                        g.FillPath(br, ap);
+                    string ch = string.IsNullOrEmpty(DisplayName) ? "?" : DisplayName.Substring(0, 1);
+                    using (SolidBrush fb = new SolidBrush(Color.FromArgb(240, 240, 240)))
+                    using (StringFormat sf = new StringFormat())
+                    {
+                        sf.Alignment = StringAlignment.Center;
+                        sf.LineAlignment = StringAlignment.Center;
+                        using (Font f = new Font(Theme.FontBrand.FontFamily, 34F, FontStyle.Bold))
+                            g.DrawString(ch, f, fb, RAv, sf);
+                    }
+                }
+                g.ResetClip();
+            }
+
+            // 说话绿圈：按电平决定亮度
+            if (Level > 4 && !Muted)
+            {
+                int a = Math.Min(220, 60 + Level * 2);
+                using (Pen pen = new Pen(Color.FromArgb(a, Theme.Accent), 3f))
+                    g.DrawPath(pen, Theme.RoundRect(RAv, 16));
+            }
+
+            // 名字与副标题
+            using (SolidBrush tb = new SolidBrush(Theme.TextPrimary))
+                g.DrawString(string.IsNullOrEmpty(DisplayName) ? "(未命名)" : DisplayName, Theme.FontTitle,
+                             tb, new RectangleF(Pad, 168, Av, 20));
+            if (!string.IsNullOrEmpty(Sub))
+                using (SolidBrush sb = new SolidBrush(Theme.TextMuted))
+                    g.DrawString(Sub, Theme.FontSmall, sb, new RectangleF(Pad, 188, Av, 16));
+
+            // 图标行
+            string[] keys = IsSelf ? new string[] { "mic", "speaker", "leave" } : new string[] { "volume", "mute" };
+            for (int i = 0; i < keys.Length; i++)
+            {
+                Rectangle r = IconRect(i, keys.Length);
+                bool on = keys[i] == "mic" ? !Muted : keys[i] == "speaker" ? !SpeakerMuted : true;
+                bool hot = _hot == keys[i];
+                Color c = keys[i] == "leave" ? Theme.Danger
+                        : (!on ? Theme.Danger : (hot ? Theme.Accent : Theme.TextSecondary));
+                DrawGlyph(g, keys[i], r, c);
+            }
+        }
+
+        private static Color AvatarColor(string name)
+        {
+            int h = 0;
+            if (!string.IsNullOrEmpty(name)) for (int i = 0; i < name.Length; i++) h = h * 31 + name[i];
+            int r = 50 + Math.Abs(h) % 90, gg = 50 + Math.Abs(h / 7) % 90, b = 50 + Math.Abs(h / 13) % 90;
+            return Color.FromArgb(r, gg, b);
+        }
+
+        private static void DrawGlyph(Graphics g, string kind, Rectangle r, Color c)
+        {
+            int cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2;
+            using (Pen pen = new Pen(c, 1.8f))
+            {
+                switch (kind)
+                {
+                    case "mic":
+                        g.DrawEllipse(pen, cx - 3, cy - 7, 6, 8);
+                        g.DrawArc(pen, cx - 5, cy - 4, 10, 10, 20, 140);
+                        g.DrawLine(pen, cx, cy + 6, cx, cy + 8);
+                        break;
+                    case "speaker":
+                        g.DrawPolygon(pen, new Point[] {
+                            new Point(cx - 6, cy - 3), new Point(cx - 3, cy - 3),
+                            new Point(cx + 2, cy - 7), new Point(cx + 2, cy + 7),
+                            new Point(cx - 3, cy + 3), new Point(cx - 6, cy + 3) });
+                        break;
+                    case "volume":
+                        g.DrawPolygon(pen, new Point[] {
+                            new Point(cx - 5, cy - 3), new Point(cx - 2, cy - 3),
+                            new Point(cx + 2, cy - 6), new Point(cx + 2, cy + 6),
+                            new Point(cx - 2, cy + 3), new Point(cx - 5, cy + 3) });
+                        g.DrawArc(pen, cx + 1, cy - 5, 8, 10, -60, 120);
+                        break;
+                    case "mute":
+                        g.DrawEllipse(pen, cx - 6, cy - 6, 12, 12);
+                        g.DrawLine(pen, cx - 6, cy + 6, cx + 6, cy - 6);
+                        break;
+                    case "leave":
+                        g.DrawRectangle(pen, cx - 7, cy - 6, 7, 12);
+                        g.DrawLine(pen, cx - 2, cy, cx + 7, cy);
+                        g.DrawLine(pen, cx + 4, cy - 3, cx + 7, cy);
+                        g.DrawLine(pen, cx + 4, cy + 3, cx + 7, cy);
+                        break;
+                }
+            }
+        }
+    }
     internal sealed class MemberListView : DarkListView
     {
         private int _hot = -1;   // 鼠标悬停在哪一行（-1 表示没有）
