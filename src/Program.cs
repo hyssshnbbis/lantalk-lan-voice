@@ -16,14 +16,10 @@ namespace LanTalk
         public int RecordAb;
         public bool RecordAbSim;
         public string RecordAbOut;
-        public bool AutoCall;
-        public bool AutoAnswer;
         public bool NullAudio;
         public bool Help;
         public int LocalPort = 47800;
-        public int PeerPort = 47800;
         public string BindIp = "0.0.0.0";
-        public string PeerIp = "";
         public int DurationSec = 10;
         public VoiceCodec Codec = VoiceCodec.Pcm16;
         public string LogPath = "";
@@ -59,13 +55,10 @@ namespace LanTalk
                     case "--record-ab-sim": r.RecordAbSim = true; break;
                     case "--record-ab-out": r.RecordAbOut = v; i++; break;
                     case "--headless": r.Headless = true; break;
-                    case "--auto-call": r.AutoCall = true; break;
-                    case "--auto-answer": r.AutoAnswer = true; break;
                     case "--null-audio": r.NullAudio = true; break;
                     case "--help": case "-h": case "/?": r.Help = true; break;
                     case "--local-port": r.LocalPort = Int(v, r.LocalPort); i++; break;
                     case "--bind": r.BindIp = v; i++; break;
-                    case "--peer-port": r.PeerPort = Int(v, r.PeerPort); i++; break;
                     case "--duration": r.DurationSec = Int(v, r.DurationSec); i++; break;
                     case "--codec": r.Codec = CodecUtil.Parse(v); i++; break;
                     case "--log": r.LogPath = v; i++; break;
@@ -96,19 +89,6 @@ namespace LanTalk
                                 string s = parts[j].Trim();
                                 if (s.Length > 0) r.ManualPeers.Add(s);
                             }
-                            break;
-                        }
-                    case "--peer":
-                        {
-                            i++;
-                            string ip = v;
-                            int c = v.LastIndexOf(':');
-                            if (c > 0)
-                            {
-                                ip = v.Substring(0, c);
-                                r.PeerPort = Int(v.Substring(c + 1), r.PeerPort);
-                            }
-                            r.PeerIp = ip;
                             break;
                         }
                 }
@@ -142,8 +122,6 @@ namespace LanTalk
             sb.AppendLine("直接双击运行不带参数即为图形界面。命令行参数：");
             sb.AppendLine("  --local-port N     本机监听端口（默认 47800）");
             sb.AppendLine("  --bind IP          绑定到指定本机地址（默认 0.0.0.0 全部）");
-            sb.AppendLine("  --peer IP[:PORT]   对方地址，可只填 IP");
-            sb.AppendLine("  --peer-port N      对方端口（默认 47800）");
             sb.AppendLine("  --codec pcm|ulaw   语音编码（默认 pcm）");
             sb.AppendLine("  --denoise 档位     降噪：off|low|mid|high 或 关闭|弱|中|强（默认 mid）");
             sb.AppendLine("  --denoise-engine   引擎：ns（默认，WebRTC NS 移植版）| classic（第一版轻量实现）");
@@ -152,8 +130,6 @@ namespace LanTalk
             sb.AppendLine("  --record-ab-sim    同上但用合成语音（不占麦克风，用于验证）");
             sb.AppendLine("  --record-ab-out    对比结果的输出目录");
             sb.AppendLine("  --headless         不开界面（配合下面几个参数可做自动化验证）");
-            sb.AppendLine("  --auto-call        启动后自动呼叫 --peer");
-            sb.AppendLine("  --auto-answer      自动接听来电");
             sb.AppendLine("  --duration N       无界面模式下运行 N 秒后退出");
             sb.AppendLine("  --null-audio       用内置测试音源/空放音替代真实声卡");
             sb.AppendLine("  --log PATH         日志文件路径");

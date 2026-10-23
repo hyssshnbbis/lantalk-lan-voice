@@ -328,7 +328,6 @@ namespace LanTalk
         public readonly FlatButton RefreshButton;
         public readonly FlatButton LoopTest;
         public readonly FlatButton RecordAb;
-        public readonly CheckBox AutoAnswer;
         public readonly Label RecHint;
 
         public const int CardW = 402;
@@ -359,7 +358,6 @@ namespace LanTalk
             RecordAb = Button("录音对比", PadH + 244, by, InnerW - 244, 28, FlatButton.Look.Normal);
 
             int cy = by + 28 + RowGap + 2;
-            AutoAnswer = Check("自动接听", PadH, cy, 110);
             RecHint = Small("录音对比：录 10 秒，两个引擎各出一份 wav + 客观指标", PadH, cy + 26, InnerW, 32);
         }
     }

@@ -52,7 +52,6 @@ namespace LanTalk
 
         private DarkSelect _cmbIn, _cmbOut, _cmbCodec, _cmbEngine;
         private Label _lblRecHint;
-        private CheckBox _chkAutoAnswer;
         private FlatButton _btnLoopTest, _btnRecordAb;
 
         private OptionRow _rdoFull, _rdoPtt;
@@ -231,7 +230,6 @@ namespace LanTalk
             _cmbOut = _cardDev.Out;
             _cmbCodec = _cardDev.Codec;
             _cmbEngine = _cardDev.Engine;
-            _chkAutoAnswer = _cardDev.AutoAnswer;
             _lblRecHint = _cardDev.RecHint;
             _cardDev.Codec.SelectedIndexChanged += OnCodecChanged;
             _cardDev.Engine.SelectedIndexChanged += OnEngineChanged;
@@ -468,7 +466,6 @@ namespace LanTalk
         {
             _txtLocalPort.Text = _args.LocalPort.ToString();
             if (_args.Codec == VoiceCodec.MuLaw) _cmbCodec.SelectedIndex = 1;
-            if (_args.AutoAnswer) _chkAutoAnswer.Checked = true;
         }
 
         private void LoadLocalIps()
