@@ -28,7 +28,6 @@ namespace LanTalk
 
         // 板块：各自持有并布局自己的控件，本类只摆放和连事件
         private LocalCard _cardLocal;
-        private WayCard _cardWay;
         private PeerCard _cardPeer;
         private RoomCard _cardRoom;
         private StatusCard _cardStatus;
@@ -41,8 +40,6 @@ namespace LanTalk
 
         // 下面全是"别名"：指向板块内部的控件，让既有逻辑可以照旧直接读写。
         // 本类不再创建、也不再给它们定坐标。
-        private DarkSelect _selMode;
-        private Label _lblWayHint;
 
         private DarkSelect _cmbLocalIp;
         private DarkInput _txtLocalPort;
@@ -80,8 +77,10 @@ namespace LanTalk
         private System.Windows.Forms.Timer _tick;
         private UdpPeer _net;
         private AudioPath _audio;
-        private Session _session;
         private Conference _conference;
+        // 一对一模式的会话对象。界面入口已移除，这里暂时保留以免状态面板取不到音频等级；
+        // 下一阶段连同 Session.cs 一起删除。
+        private Session _session;
         private string _myName;
         private bool _pttHeld;
         private int _lastMemberCount;
@@ -156,9 +155,6 @@ namespace LanTalk
 
             // 默认是多人会议室；但如果启动参数里指定了 --room，或给了 --peer，
             // 就按参数意图切模式，免得命令行场景被界面默认值带偏。
-            if (_args.Room > 0) _selMode.SelectedIndex = WayCard.IndexRoom;
-            else if (_args.PeerIp != null) _selMode.SelectedIndex = WayCard.IndexP2P;
-            else _selMode.SelectedIndex = WayCard.IndexRoom;   // 无参数启动：默认多人会议室
 
             try { SelfUpdate.CleanupOld(Application.ExecutablePath); } catch { }
             LoadChatHistory();
@@ -172,7 +168,6 @@ namespace LanTalk
             _sidebar.BackColor = Theme.SidebarBg;
 
             _cardLocal = new LocalCard(12, 12);
-            _cardWay = new WayCard(12, 178);
             _cardPeer = new PeerCard(12, 262);
             _cardRoom = new RoomCard(12, 262);
             _cardRoom.Visible = false;
@@ -188,7 +183,7 @@ namespace LanTalk
             _lblVer.ForeColor = Theme.TextMuted;
             _lblVer.BackColor = Color.Transparent;
 
-            _sidebar.Controls.AddRange(new Control[] { _cardLocal, _cardWay, _cardPeer, _cardRoom, _cardMembers, _cardMeter, _lblVer });
+            _sidebar.Controls.AddRange(new Control[] { _cardLocal, _cardPeer, _cardRoom, _cardMembers, _cardMeter, _lblVer });
         }
 
         // ==================== 主区 ====================
@@ -216,9 +211,6 @@ namespace LanTalk
             _cardLocal.Apply.Click += OnApplyClick;
 
             // 连接模式
-            _selMode = _cardWay.Mode;
-            _lblWayHint = _cardWay.Hint;
-            _selMode.SelectedIndexChanged += OnWayChanged;
 
             // 对方
             _txtPeerIp = _cardPeer.Ip;
@@ -450,7 +442,6 @@ namespace LanTalk
         private void AutoJoinRoomIfRequested()
         {
             if (_args.Room <= 0) return;
-            _selMode.SelectedIndex = WayCard.IndexRoom;
             _txtRoomPort.Text = _args.Room.ToString();
             _txtLocalPort.Text = _args.Room.ToString();
             RebuildSession();
@@ -709,7 +700,8 @@ namespace LanTalk
 
         // ================= 通话方式：一对一 / 会议室 =================
 
-        private bool RoomMode { get { return _selMode != null && _selMode.SelectedIndex == WayCard.IndexRoom; } }
+        /// <summary>现在只有会议室一种模式（两个人的房间就是一对一）。</summary>
+        private bool RoomMode { get { return true; } }
 
         private void OnWayChanged(object sender, EventArgs e)
         {
@@ -726,7 +718,6 @@ namespace LanTalk
             if (room && _session != null && _session.State != CallState.Idle)
             {
                 Log.Write("会议模式不支持一对一通话，请先挂断。");
-                _selMode.SelectedIndex = WayCard.IndexP2P;
                 return;
             }
             if (!room && _conference != null && _conference.Joined)
@@ -735,12 +726,6 @@ namespace LanTalk
                 _conference.Leave();
             }
 
-            if (_lblWayHint != null)
-            {
-                _lblWayHint.Text = room
-                    ? "房间号就是 UDP 端口：填号码点「加入会议」。"
-                    : "两台电脑直接对拨：填对方 IP，点「呼叫」。";
-            }
             if (room && _txtRoomPort != null && _txtRoomPort.Text.Trim().Length == 0 && _txtLocalPort != null)
             {
                 _txtRoomPort.Text = _txtLocalPort.Text.Trim();
@@ -825,11 +810,16 @@ namespace LanTalk
             menu.Items.Add(head);
             menu.Items.Add(new ToolStripSeparator());
 
-            ToolStripMenuItem mute = new ToolStripMenuItem("静音");
-            mute.CheckOnClick = true;
-            mute.Checked = m.Muted;
+            // 文本跟着状态走：已静音就显示「解除静音」，否则显示「静音」
+            ToolStripMenuItem mute = new ToolStripMenuItem(m.Muted ? "解除静音" : "静音");
             mute.Padding = new Padding(12, 5, 12, 5);
-            mute.Click += delegate { if (_conference != null) _conference.SetMemberMuted(key, mute.Checked); };
+            mute.Click += delegate
+            {
+                if (_conference == null) return;
+                bool next = !m.Muted;
+                _conference.SetMemberMuted(key, next);
+                mute.Text = next ? "解除静音" : "静音";
+            };
             menu.Items.Add(mute);
 
             menu.Items.Add(new ToolStripSeparator());
