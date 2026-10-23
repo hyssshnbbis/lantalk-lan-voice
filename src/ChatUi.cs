@@ -299,12 +299,7 @@ namespace LanTalk
                 byte[] data = _msgs[idx].Image;
 
                 ContextMenuStrip menu = new ContextMenuStrip();
-                menu.Renderer = new ToolStripProfessionalRenderer(new DarkMenuColors());
-                menu.BackColor = Color.FromArgb(34, 34, 34);
-                menu.ForeColor = Theme.TextPrimary;
-                menu.Font = Theme.FontUi;
-                menu.ShowImageMargin = false;
-                menu.Padding = new Padding(0, 4, 0, 4);
+                DarkMenu.Apply(menu);
 
                 ToolStripMenuItem miView = new ToolStripMenuItem("查看原图");
                 miView.ForeColor = Theme.TextPrimary;

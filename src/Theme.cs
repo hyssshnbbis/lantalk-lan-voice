@@ -822,12 +822,7 @@ namespace LanTalk
         {
             if (Items.Count == 0) return;
             ContextMenuStrip menu = new ContextMenuStrip();
-            menu.Renderer = new ToolStripProfessionalRenderer(new DarkMenuColors());
-            menu.BackColor = Color.FromArgb(34, 34, 34);
-            menu.ForeColor = Theme.TextPrimary;
-            menu.Font = Theme.FontUi;
-            menu.ShowImageMargin = false;
-            menu.Padding = new Padding(0, 4, 0, 4);
+            DarkMenu.Apply(menu);
 
             for (int i = 0; i < Items.Count; i++)
             {
@@ -1249,17 +1244,107 @@ namespace LanTalk
     /// <summary>深色下拉/右键菜单的统一配色，DarkSelect 与聊天消息菜单共用。</summary>
     internal sealed class DarkMenuColors : ProfessionalColorTable
     {
-        public override Color ToolStripDropDownBackground { get { return Color.FromArgb(34, 34, 34); } }
-        public override Color ImageMarginGradientBegin { get { return Color.FromArgb(34, 34, 34); } }
-        public override Color ImageMarginGradientMiddle { get { return Color.FromArgb(34, 34, 34); } }
-        public override Color ImageMarginGradientEnd { get { return Color.FromArgb(34, 34, 34); } }
-        public override Color MenuBorder { get { return Color.FromArgb(58, 58, 58); } }
-        public override Color MenuItemBorder { get { return Color.FromArgb(58, 58, 58); } }
-        public override Color MenuItemSelected { get { return Color.FromArgb(56, 56, 56); } }
-        public override Color MenuItemSelectedGradientBegin { get { return Color.FromArgb(56, 56, 56); } }
-        public override Color MenuItemSelectedGradientEnd { get { return Color.FromArgb(56, 56, 56); } }
-        public override Color MenuItemPressedGradientBegin { get { return Color.FromArgb(56, 56, 56); } }
-        public override Color MenuItemPressedGradientEnd { get { return Color.FromArgb(56, 56, 56); } }
+        public override Color ToolStripDropDownBackground { get { return DarkMenu.Bg; } }
+        public override Color ImageMarginGradientBegin { get { return DarkMenu.Bg; } }
+        public override Color ImageMarginGradientMiddle { get { return DarkMenu.Bg; } }
+        public override Color ImageMarginGradientEnd { get { return DarkMenu.Bg; } }
+        public override Color MenuBorder { get { return DarkMenu.Border; } }
+        public override Color MenuItemBorder { get { return DarkMenu.Border; } }
+        public override Color MenuItemSelected { get { return DarkMenu.Hover; } }
+        public override Color MenuItemSelectedGradientBegin { get { return DarkMenu.Hover; } }
+        public override Color MenuItemSelectedGradientEnd { get { return DarkMenu.Hover; } }
+        public override Color MenuItemPressedGradientBegin { get { return DarkMenu.Pressed; } }
+        public override Color MenuItemPressedGradientEnd { get { return DarkMenu.Pressed; } }
+        public override Color SeparatorDark { get { return DarkMenu.Line; } }
+        public override Color SeparatorLight { get { return DarkMenu.Line; } }
+    }
+
+    /// <summary>
+    /// 弹出菜单的统一深色样式（右键菜单、成员小窗、下拉列表共用）。
+    ///
+    /// 以前三处各自 new 一个 ToolStripProfessionalRenderer，边框和分隔线还是系统的浅色，
+    /// 弹出来一股"系统菜单贴了个深色底"的味道。这里一次性收口：
+    ///   · 背景与卡片同色，圆角 8，1px 深色描边
+    ///   · 悬停高亮用列表选中行的绿灰色，不用系统灰
+    ///   · 分隔线画细、两侧留 10px，不再横贯整条
+    ///   · 干掉左侧图标栏的渐变（我们的菜单没有图标）
+    /// </summary>
+    internal static class DarkMenu
+    {
+        public static readonly Color Bg = Theme.CardBg;          // 和卡片一致，滑块放进去才不会出现色块
+        public static readonly Color Border = Theme.CardBorder;
+        public static readonly Color Line = Color.FromArgb(54, 54, 54);
+        public static readonly Color Hover = Color.FromArgb(46, 58, 48);    // 与列表选中行同色
+        public static readonly Color Pressed = Color.FromArgb(52, 66, 55);
+        public const int RadiusLogical = 8;
+
+        /// <summary>把一个 ContextMenuStrip 变成统一深色样式（大小、圆角会跟着菜单尺寸重算）。</summary>
+        public static void Apply(ContextMenuStrip menu)
+        {
+            if (menu == null) return;
+            Theme.InitFonts();
+            menu.Renderer = new DarkMenuRenderer();
+            menu.BackColor = Bg;
+            menu.ForeColor = Theme.TextPrimary;
+            menu.Font = Theme.FontUi;
+            menu.ShowImageMargin = false;
+            menu.ShowCheckMargin = false;
+            menu.Padding = new Padding(0, 6, 0, 6);
+            menu.DropShadowEnabled = true;
+            menu.Opened += delegate { RoundCorners(menu); };
+        }
+
+        private static void RoundCorners(ToolStripDropDown m)
+        {
+            if (m.Width <= 4 || m.Height <= 4) return;
+            int rad = Theme.Radius(m, RadiusLogical);
+            using (GraphicsPath p = Theme.RoundRect(new Rectangle(0, 0, m.Width, m.Height), rad))
+                m.Region = new Region(p);
+        }
+    }
+
+    internal sealed class DarkMenuRenderer : ToolStripProfessionalRenderer
+    {
+        public DarkMenuRenderer() : base(new DarkMenuColors()) { RoundedEdges = false; }
+
+        protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            using (SolidBrush b = new SolidBrush(DarkMenu.Bg)) g.FillRectangle(b, new Rectangle(Point.Empty, e.ToolStrip.Size));
+        }
+
+        protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            Rectangle r = new Rectangle(0, 0, Math.Max(2, e.ToolStrip.Width - 1), Math.Max(2, e.ToolStrip.Height - 1));
+            int rad = Theme.Radius(e.ToolStrip, DarkMenu.RadiusLogical);
+            using (GraphicsPath p = Theme.RoundRect(r, rad))
+            using (Pen pen = new Pen(DarkMenu.Border)) g.DrawPath(pen, p);
+        }
+
+        protected override void OnRenderImageMargin(ToolStripRenderEventArgs e) { }
+
+        protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+        {
+            if (!e.Item.Selected && !e.Item.Pressed) return;
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            Rectangle r = new Rectangle(4, 0, Math.Max(2, e.Item.Width - 8), e.Item.Height);
+            int rad = Theme.Radius(e.ToolStrip, 4);
+            using (GraphicsPath p = Theme.RoundRect(new Rectangle(r.X, r.Y, Math.Max(2, r.Width - 1), Math.Max(2, r.Height - 1)), rad))
+            using (SolidBrush b = new SolidBrush(e.Item.Pressed ? DarkMenu.Pressed : DarkMenu.Hover))
+                g.FillPath(b, p);
+        }
+
+        protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            int y = e.Item.Height / 2;
+            using (Pen pen = new Pen(DarkMenu.Line))
+                g.DrawLine(pen, 10, y, Math.Max(11, e.Item.Width - 10), y);
+        }
     }
     /// <summary>
     /// 真正的拨动开关：一条圆角轨道 + 一个圆形滑块。

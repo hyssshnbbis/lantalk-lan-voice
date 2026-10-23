@@ -772,17 +772,14 @@ Log.Write("降噪引擎 " + (_args.UseNsEngine ? "WebRTC NS" : "轻量版"));
             string title = string.IsNullOrEmpty(m.Name) ? "成员" : m.Name;
 
             ContextMenuStrip menu = new ContextMenuStrip();
-            menu.Renderer = new ToolStripProfessionalRenderer(new DarkMenuColors());
-            menu.BackColor = Color.FromArgb(34, 34, 34);
-            menu.ForeColor = Theme.TextPrimary;
-            menu.Font = Theme.FontUi;
-            menu.ShowImageMargin = false;
-            menu.Padding = new Padding(0, 6, 0, 6);
+            DarkMenu.Apply(menu);
             menu.MinimumSize = new Size(240, 0);
 
+            // 标题行做得像卡片的角标：小字、灰、不要抢戏
             ToolStripLabel head = new ToolStripLabel(title);
             head.ForeColor = Theme.TextMuted;
-            head.Padding = new Padding(12, 4, 12, 4);
+            head.Font = Theme.FontSmall;
+            head.Padding = new Padding(12, 4, 12, 6);
             menu.Items.Add(head);
             menu.Items.Add(new ToolStripSeparator());
 
@@ -801,8 +798,9 @@ Log.Write("降噪引擎 " + (_args.UseNsEngine ? "WebRTC NS" : "轻量版"));
             menu.Items.Add(new ToolStripSeparator());
 
             ToolStripLabel volLabel = new ToolStripLabel("用户音量   " + m.Volume + "%");
-            volLabel.ForeColor = Theme.TextSecondary;
-            volLabel.Padding = new Padding(12, 4, 12, 2);
+            volLabel.ForeColor = Theme.TextMuted;
+            volLabel.Font = Theme.FontSmall;
+            volLabel.Padding = new Padding(12, 6, 12, 2);
             menu.Items.Add(volLabel);
 
             DarkSlider slider = new DarkSlider();
@@ -812,8 +810,10 @@ Log.Write("降噪引擎 " + (_args.UseNsEngine ? "WebRTC NS" : "轻量版"));
             slider.Width = 208;
             slider.Height = 28;
 
+            slider.BackColor = DarkMenu.Bg;
             ToolStripControlHost host = new ToolStripControlHost(slider);
-            host.Padding = new Padding(10, 0, 10, 8);
+            host.BackColor = DarkMenu.Bg;
+            host.Padding = new Padding(10, 2, 10, 8);
             slider.ValueChanged += delegate
             {
                 volLabel.Text = "用户音量   " + slider.Value + "%";
